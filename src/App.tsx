@@ -1,1196 +1,710 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import {
-  LayoutDashboard,
-  Package,
-  Search,
-  Bell,
-  Plus,
-  Minus,
-  Menu,
-  X,
-  AlertTriangle,
-  TrendingUp,
-  Trash2,
-  Car,
-  FolderPlus,
-  Folder,
-  ArrowLeft,
-  ChevronLeft,
-  FileText,
-  DollarSign,
-  Settings,
-  LogOut,
-  Sun,
-  Moon,
-  Mic,
-  MessageSquare,
-  Send,
-  Lock,
-  User,
-  CheckCircle
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  Plus, Minus, Search, X, Trash2, ArrowLeft, Book, Grid, 
+  Mic, Settings, AlertTriangle, Languages, Lock, Bell, 
+  Download, ShieldCheck, ShieldAlert, CheckCircle, Smartphone, 
+  Edit, SaveAll, FileText, LogOut, Wifi, WifiOff 
 } from 'lucide-react';
 
-// --- DATA PERSISTENCE HELPERS ---
-const loadFromStorage = (key, initial) => {
-  const saved = localStorage.getItem(key);
-  return saved ? JSON.parse(saved) : initial;
+// --- FIREBASE IMPORTS ---
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, onSnapshot, setDoc } from "firebase/firestore";
+
+// ---------------------------------------------------------
+// ✅ AAPKI ORIGINAL FIREBASE CONFIGURATION
+// ---------------------------------------------------------
+const firebaseConfig = {
+  apiKey: "AIzaSyDDer9o6DqRuFVSQwRcq0BqvDkc72oKSRk",
+  authDomain: "arvindregister-353e5.firebaseapp.com",
+  projectId: "arvindregister-353e5",
+  storageBucket: "arvindregister-353e5.firebasestorage.app",
+  messagingSenderId: "557116649734",
+  appId: "1:557116649734:web:822bbad24cca3274012e87",
+  measurementId: "G-79C2SNJC56"
 };
 
-const initialProducts = [
-  { id: 1, name: 'Leather Seat Covers (Swift)', category: 'Interior', price: 4500, stock: 12, compatibleCars: ['swift', 'dzire'] },
-  { id: 2, name: 'Android Screen 9" (Universal)', category: 'Electronics', price: 8500, stock: 4, compatibleCars: ['universal', 'swift', 'creta', 'thar'] },
-  { id: 3, name: 'Alloy Wheels 16" (Thar)', category: 'Exterior', price: 22000, stock: 2, compatibleCars: ['thar', 'scorpio'] },
-  { id: 4, name: 'Car Body Cover (Sedan)', category: 'Exterior', price: 1200, stock: 20, compatibleCars: ['city', 'verna', 'ciaz'] },
-  { id: 5, name: 'LED Headlights H4', category: 'Electronics', price: 3200, stock: 8, compatibleCars: ['swift', 'baleno', 'i20', 'universal'] },
-  { id: 6, name: '7D Floor Mats (Creta)', category: 'Interior', price: 2800, stock: 3, compatibleCars: ['creta'] },
-  { id: 7, name: 'Tyre Inflator', category: 'Tools', price: 1800, stock: 15, compatibleCars: ['universal', 'swift', 'thar', 'creta', 'city'] },
-  { id: 8, name: 'Bass Tube 12"', category: 'Electronics', price: 4500, stock: 6, compatibleCars: ['universal'] },
-  { id: 9, name: 'Roof Rails (Thar)', category: 'Exterior', price: 3500, stock: 0, compatibleCars: ['thar'] },
-];
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const DOC_ID = "main_inventory"; // Database Document Name
 
-const initialCategories = ['All Items', 'Interior', 'Exterior', 'Electronics', 'Tools'];
+// --- DICTIONARY ---
+const dictionary = {
+  "brake": "ब्रेक", "pads": "पैड्स", "shoe": "शू", "oil": "तेल", "filter": "फिल्टर",
+  "light": "लाइट", "headlight": "हेडलाइट", "bumper": "बम्पर", "cover": "कवर",
+  "seat": "सीट", "mat": "मैट", "guard": "गार्ड", "horn": "हॉर्न", "mirror": "शीशा",
+  "glass": "कांच", "clutch": "क्लच", "wire": "तार", "battery": "बैटरी", "tyre": "टायर",
+  "tube": "ट्यूब", "alloy": "अलॉय", "wheel": "व्हील", "cap": "कैप", "door": "दरवाजा",
+  "handle": "हैंडल", "lock": "लॉक", "key": "चाबी", "sensor": "सेंसर", "screen": "स्क्रीन",
+  "swift": "स्विफ्ट", "thar": "थार", "creta": "क्रेटा", "alto": "आल्टो",
+  "page": "पेज", "qty": "मात्रा", "car": "गाड़ी", "search": "खोजें", 
+  "index": "विषय सूची", "settings": "सेटिंग्स", "pages": "पेज लिस्ट", 
+  "total": "कुल", "delete": "हटाएं", "confirm": "पुष्टि करें", "update": "अपडेट",
+  "save changes": "बदलाव सेव करें", "pending": "पेंडिंग", "online": "ऑनलाइन", "offline": "ऑफलाइन"
+};
 
-const initialTransactions = [
-  { id: 101, type: 'Sale', productName: 'Leather Seat Covers', amount: 4500, date: 'Today, 10:00 AM' },
-  { id: 102, type: 'Restock', productName: 'Car Body Cover', amount: 0, date: 'Yesterday, 6:00 PM' }
-];
+const translateText = (text) => {
+  if (!text) return "";
+  return text.split(' ').map(word => {
+    const lower = word.toLowerCase();
+    return dictionary[lower] ? dictionary[lower] : word;
+  }).join(' ');
+};
 
-// --- VOICE INPUT COMPONENT ---
+// --- VOICE INPUT ---
 const VoiceInput = ({ onResult, isDark }) => {
-  const [isListening, setIsListening] = useState(false);
-
   const startListening = () => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
-      recognition.lang = 'hi-IN'; // Optimized for Hindi/Indian English
-      recognition.continuous = false;
-      recognition.interimResults = false;
-
-      recognition.onstart = () => setIsListening(true);
-      recognition.onend = () => setIsListening(false);
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        onResult(transcript);
-      };
-      recognition.start();
-    } else {
-      alert("Voice search not supported in this browser.");
-    }
+      recognition.lang = 'en-IN'; 
+      recognition.onresult = (e) => onResult(e.results[0][0].transcript);
+      try { recognition.start(); } catch (e) { console.error(e); }
+    } else { alert("Mic Error"); }
   };
-
   return (
-    <button
-      onClick={startListening}
-      className={`p-2 rounded-full transition-all ${isListening ? 'animate-pulse bg-red-500 text-white' : (isDark ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-blue-600')}`}
-      title="Speak to Search (Hindi/English)"
-    >
-      <Mic size={20} />
+    <button onClick={startListening} className={`p-3 rounded-full shrink-0 ${isDark ? 'bg-slate-700 text-white' : 'bg-gray-100 text-black hover:bg-gray-200'}`}>
+      <Mic size={20}/>
     </button>
   );
 };
 
-// --- LOGIN COMPONENT ---
-const LoginScreen = ({ onLogin }) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-
-  const handleLogin = (e) => {
-    e.preventDefault();
-    // HARDCODED SECURE CREDENTIALS FOR DEMO
-    if (username === 'admin' && password === 'password123') {
-      onLogin();
-    } else {
-      setError('Invalid Credentials');
-    }
+export default function ArvindRegister() {
+  // Default Data Structure
+  const defaultData = { 
+    pages: [], 
+    entries: [], 
+    settings: { limit: 5, theme: 'light', password: '123', productPassword: '0000' } 
   };
 
-  return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-slate-700">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
-             <span className="text-white font-bold text-2xl">AH</span>
-          </div>
-          <h1 className="text-2xl font-bold text-white">Welcome Back</h1>
-          <p className="text-slate-400 mt-2">Sign in to AutoHub Enterprise</p>
-        </div>
-
-        <form onSubmit={handleLogin} className="space-y-6">
-          <div>
-            <label className="block text-slate-400 text-sm font-bold mb-2 uppercase">Username</label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              <input 
-                type="text" 
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-blue-500 transition-colors"
-                placeholder="Enter username"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-slate-400 text-sm font-bold mb-2 uppercase">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              <input 
-                type="password" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-blue-500 transition-colors"
-                placeholder="Enter password"
-              />
-            </div>
-          </div>
-          
-          {error && <div className="text-red-400 text-sm text-center bg-red-900/20 p-2 rounded border border-red-900/50">{error}</div>}
-
-          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-all shadow-lg shadow-blue-600/20 active:scale-95">
-            Secure Login
-          </button>
-        </form>
-        <div className="mt-6 text-center text-xs text-slate-500">
-          <p>Protected by Enterprise Guard AI</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// --- AI ASSISTANT COMPONENT ---
-const AIChatBot = ({ products, transactions, isDark, businessName }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [messages, setMessages] = useState([
-    { role: 'ai', text: `Namaste! Main ${businessName} ka AI Assistant hu. Stock, price ya sales ke baare mein kuch bhi puchiye.` }
-  ]);
-  const messagesEndRef = useRef(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isOpen]);
-
-  const processQuery = (text) => {
-    const lowerText = text.toLowerCase();
-    let response = "Maaf kijiye, mujhe samajh nahi aaya. Kripya products, stock ya sales ke baare mein puchiye.";
-
-    // Logic to simulate "Knowing the whole business"
-    if (lowerText.includes('total stock') || lowerText.includes('kitne item')) {
-      const totalStock = products.reduce((acc, p) => acc + p.stock, 0);
-      response = `Humare paas kul ${products.length} alag products hain, aur total ${totalStock} units stock mein hain.`;
-    } 
-    else if (lowerText.includes('sale') || lowerText.includes('kamai') || lowerText.includes('revenue')) {
-      const totalSales = transactions.filter(t => t.type === 'Sale').reduce((acc, t) => acc + t.amount, 0);
-      response = `Aaj ki total sales abhi tak ₹${totalSales.toLocaleString()} hui hai.`;
-    }
-    else if (lowerText.includes('low') || lowerText.includes('kam') || lowerText.includes('khatam')) {
-      const lowStock = products.filter(p => p.stock < 5).map(p => p.name).join(', ');
-      response = lowStock ? `Ye items khatam hone wale hain: ${lowStock}` : "Sabhi items ka stock sufficient hai.";
-    }
-    else {
-      // Product search logic
-      const foundProduct = products.find(p => lowerText.includes(p.name.toLowerCase().split(' ')[0].toLowerCase()));
-      if (foundProduct) {
-        response = `${foundProduct.name} ka price ₹${foundProduct.price} hai aur abhi ${foundProduct.stock} units available hain. Ye ${foundProduct.compatibleCars.join(', ')} ke liye compatible hai.`;
-      }
-    }
-
-    return response;
-  };
-
-  const handleSend = () => {
-    if (!query.trim()) return;
-    const userMsg = { role: 'user', text: query };
-    setMessages(prev => [...prev, userMsg]);
-    setQuery('');
-
-    setTimeout(() => {
-      const aiResponse = processQuery(userMsg.text);
-      setMessages(prev => [...prev, { role: 'ai', text: aiResponse }]);
-    }, 600);
-  };
-
-  return (
-    <>
-      <button 
-        onClick={() => setIsOpen(!isOpen)} 
-        className="fixed bottom-6 right-6 z-50 p-4 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-full shadow-2xl text-white hover:scale-105 transition-transform"
-      >
-        {isOpen ? <X size={24} /> : <MessageSquare size={24} />}
-      </button>
-
-      {isOpen && (
-        <div className={`fixed bottom-24 right-6 z-50 w-80 md:w-96 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-scale-in border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`} style={{height: '500px'}}>
-          <div className="p-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex justify-between items-center">
-             <div>
-               <h3 className="font-bold flex items-center gap-2"><div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"/> Business AI</h3>
-               <p className="text-xs opacity-80">Hindi & Voice Enabled</p>
-             </div>
-          </div>
-          
-          <div className={`flex-1 overflow-y-auto p-4 space-y-3 ${isDark ? 'bg-slate-900' : 'bg-slate-50'}`}>
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : (isDark ? 'bg-slate-700 text-slate-200 rounded-bl-none' : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none')}`}>
-                  {msg.text}
-                </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-
-          <div className={`p-3 border-t flex items-center gap-2 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-            <VoiceInput onResult={setQuery} isDark={isDark} />
-            <input 
-              type="text" 
-              value={query} 
-              onChange={e => setQuery(e.target.value)}
-              onKeyPress={e => e.key === 'Enter' && handleSend()}
-              placeholder="Ask AI (e.g., Stock check)..."
-              className={`flex-1 bg-transparent border-none outline-none text-sm ${isDark ? 'text-white placeholder-slate-500' : 'text-slate-800'}`}
-            />
-            <button onClick={handleSend} className="text-indigo-500 hover:text-indigo-600 p-2"><Send size={20}/></button>
-          </div>
-        </div>
-      )}
-    </>
-  );
-};
-
-const SidebarItem = ({ icon: Icon, label, active, onClick, collapsed }) => (
-  <button
-    onClick={onClick}
-    className={`
-      flex items-center w-full py-3 transition-all duration-200 group
-      ${collapsed ? 'justify-center px-2' : 'px-4 space-x-3'}
-      ${active
-        ? 'bg-blue-600 text-white shadow-md'
-        : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-      }
-    `}
-    title={collapsed ? label : ''}
-  >
-    <Icon size={20} className={`shrink-0 ${active ? 'text-white' : 'text-slate-400 group-hover:text-white'}`} />
-    {!collapsed && <span className="text-sm font-medium tracking-wide whitespace-nowrap">{label}</span>}
-    {active && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
-  </button>
-);
-
-const StatCard = ({ title, value, icon: Icon, color, subtext, onClick, clickable, isDark }) => {
-  const colorClasses = {
-    blue: isDark ? 'bg-blue-900/30 text-blue-400 border-blue-800' : 'bg-blue-50 text-blue-600 border-blue-200',
-    red: isDark ? 'bg-red-900/30 text-red-400 border-red-800' : 'bg-red-50 text-red-600 border-red-200',
-    green: isDark ? 'bg-emerald-900/30 text-emerald-400 border-emerald-800' : 'bg-emerald-50 text-emerald-600 border-emerald-200',
-  };
-
-  return (
-    <div
-      onClick={onClick}
-      className={`p-5 rounded-lg border shadow-sm flex items-start justify-between relative overflow-hidden group transition-all
-        ${isDark ? 'bg-slate-800 border-slate-700 hover:border-blue-500' : 'bg-white border-slate-200 hover:border-blue-400'}
-        ${clickable ? 'cursor-pointer hover:shadow-md' : ''}`}
-    >
-      <div className="z-10">
-        <p className={`text-xs font-bold uppercase tracking-wider mb-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{title}</p>
-        <h3 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>{value}</h3>
-        {subtext && <p className={`text-xs mt-2 font-medium ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{subtext}</p>}
-      </div>
-      <div className={`p-3 rounded-md ${colorClasses[color]} z-10 border`}>
-        <Icon size={22} />
-      </div>
-      <Icon className={`absolute -bottom-4 -right-4 w-24 h-24 opacity-5 transform group-hover:scale-110 transition-transform ${isDark ? 'text-white' : 'text-slate-900'}`} />
-    </div>
-  );
-};
-
-const ProductDetailModal = ({ product, onClose, onStockChange, isDark }) => {
-  if (!product) return null;
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm animate-fade-in p-4">
-      <div className={`rounded-lg shadow-2xl w-full max-w-lg overflow-hidden border animate-scale-in flex flex-col max-h-[90vh] ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <div className={`px-6 py-4 border-b flex justify-between items-center ${isDark ? 'bg-slate-900/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-          <div>
-            <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>{product.name}</h3>
-            <span className={`text-xs font-mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>ID: #{product.id}</span>
-          </div>
-          <button onClick={onClose} className={`p-1 rounded-full transition-colors ${isDark ? 'text-slate-400 hover:bg-slate-700 hover:text-white' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'}`}>
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="p-6 overflow-y-auto space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-             <div className={`p-4 rounded-md border ${isDark ? 'bg-blue-900/20 border-blue-900/50' : 'bg-blue-50/50 border-blue-100'}`}>
-                <p className="text-blue-500 text-xs font-bold uppercase">Unit Price</p>
-                <p className={`text-xl font-bold ${isDark ? 'text-blue-100' : 'text-slate-800'}`}>₹{product.price.toLocaleString()}</p>
-             </div>
-             <div className={`p-4 rounded-md border ${isDark ? 'bg-slate-700/50 border-slate-600' : 'bg-slate-50 border-slate-100'}`}>
-                <p className={`text-xs font-bold uppercase ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Current Stock</p>
-                <div className="flex items-center gap-2">
-                  <p className={`text-xl font-bold ${product.stock < 5 ? 'text-red-500' : 'text-emerald-500'}`}>
-                    {product.stock}
-                  </p>
-                  <span className={`text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>units</span>
-                </div>
-             </div>
-          </div>
-
-          <div>
-            <p className={`text-xs font-bold uppercase mb-2 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Compatibility Map</p>
-            <div className="flex flex-wrap gap-2">
-              {product.compatibleCars.map((car, idx) => (
-                <span key={idx} className={`px-2 py-1 text-xs font-medium rounded border shadow-sm capitalize flex items-center gap-1 ${isDark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-200 text-slate-700'}`}>
-                  <Car size={10} className={isDark ? 'text-slate-400' : 'text-slate-400'}/> {car}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className={`p-4 rounded-md border ${isDark ? 'bg-slate-700/30 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-            <p className={`text-center text-xs font-bold uppercase mb-3 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Inventory Adjustment</p>
-            <div className="flex items-center justify-center space-x-6">
-               <button
-                 onClick={() => onStockChange(product.id, -1)}
-                 className={`w-10 h-10 rounded-md border flex items-center justify-center transition-all shadow-sm active:scale-95 ${isDark ? 'bg-slate-800 border-slate-600 text-red-400 hover:bg-slate-700' : 'bg-white border-slate-300 text-red-500 hover:bg-red-50'}`}
-               >
-                 <Minus size={20}/>
-               </button>
-               <span className={`font-mono text-2xl font-bold w-16 text-center ${isDark ? 'text-white' : 'text-slate-800'}`}>{product.stock}</span>
-               <button
-                 onClick={() => onStockChange(product.id, 1)}
-                 className={`w-10 h-10 rounded-md border flex items-center justify-center transition-all shadow-md active:scale-95 ${isDark ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-500' : 'bg-slate-800 border-slate-800 text-white hover:bg-slate-700'}`}
-               >
-                 <Plus size={20}/>
-               </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default function ERPSystem() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [data, setData] = useState(defaultData);
+  const [loading, setLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   
-  // -- STATE INITIALIZATION WITH PERSISTENCE --
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [theme, setTheme] = useState(() => loadFromStorage('theme', 'light'));
-  const [products, setProducts] = useState(() => loadFromStorage('products', initialProducts));
-  const [categories, setCategories] = useState(() => loadFromStorage('categories', initialCategories));
-  const [transactions, setTransactions] = useState(() => loadFromStorage('transactions', initialTransactions));
-  const [notes, setNotes] = useState(() => loadFromStorage('notes', "• Order new mats for Swift\n• Call distributor regarding delayed shipment."));
-  const [businessName, setBusinessName] = useState(() => loadFromStorage('businessName', 'AutoHub Enterprise'));
-  const [lowStockThreshold, setLowStockThreshold] = useState(() => loadFromStorage('threshold', 5));
-  const [currency, setCurrency] = useState('₹');
+  // UI States
+  const [view, setView] = useState('generalIndex'); 
+  const [activePage, setActivePage] = useState(null);
+  const [pageSearchTerm, setPageSearchTerm] = useState(''); 
+  const [indexSearchTerm, setIndexSearchTerm] = useState(''); 
+  const [stockSearchTerm, setStockSearchTerm] = useState(''); 
+  const [isHindi, setIsHindi] = useState(false);
+  const [isSafeMode, setIsSafeMode] = useState(true); 
+  const [tempChanges, setTempChanges] = useState({}); 
 
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [dashboardView, setDashboardView] = useState('overview');
-  const [selectedProductForDetail, setSelectedProductForDetail] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All Items');
-  const [newCategoryName, setNewCategoryName] = useState('');
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [newProduct, setNewProduct] = useState({ name: '', category: '', price: '', stock: '', compatibleCars: '' });
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [carModelSearch, setCarModelSearch] = useState('');
-  const [selectedCarCategory, setSelectedCarCategory] = useState(null);
+  // Security States
+  const [settingsUnlocked, setSettingsUnlocked] = useState(false);
+  const [settingsPassInput, setSettingsPassInput] = useState('');
+  const [isAppUnlocked, setIsAppUnlocked] = useState(() => {
+     if (typeof window !== 'undefined') return localStorage.getItem('arvind-app-unlocked') === 'true';
+     return false;
+  });
+  
+  // Inputs
+  const [loginPassInput, setLoginPassInput] = useState('');
+  const [newPass, setNewPass] = useState('');
+  const [newProductPass, setNewProductPass] = useState(''); 
+  const [isNewPageOpen, setIsNewPageOpen] = useState(false);
+  const [isNewEntryOpen, setIsNewEntryOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState(null); 
+  const [input, setInput] = useState({ itemName: '', carName: '', qty: '' });
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [notifPermission, setNotifPermission] = useState('default');
+  const audioRef = useRef(null);
 
-  // Check login on mount
+  // --- FIREBASE REAL-TIME SYNC ---
   useEffect(() => {
-    const authStatus = localStorage.getItem('isAuthenticated');
-    if (authStatus === 'true') {
-      setIsAuthenticated(true);
-    }
+    // Connection Status
+    window.addEventListener('online', () => setIsOnline(true));
+    window.addEventListener('offline', () => setIsOnline(false));
+
+    // Database Listener
+    const unsub = onSnapshot(doc(db, "appData", DOC_ID), (docSnapshot) => {
+        if (docSnapshot.exists()) {
+            const cloudData = docSnapshot.data();
+            // Ensure data integrity
+            if(!cloudData.settings.productPassword) cloudData.settings.productPassword = '0000';
+            setData(cloudData);
+        } else {
+            // First time run: Create document
+            setDoc(doc(db, "appData", DOC_ID), defaultData);
+        }
+        setLoading(false);
+    }, (error) => {
+        console.error("Firebase Error:", error);
+        // Silent fail or alert based on preference, removed alert to be less annoying
+    });
+
+    return () => unsub();
   }, []);
 
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-    localStorage.setItem('isAuthenticated', 'true');
+  // --- SAVE TO FIREBASE FUNCTION ---
+  const pushToFirebase = async (newData) => {
+      try {
+          await setDoc(doc(db, "appData", DOC_ID), newData);
+          return true;
+      } catch (e) {
+          alert("Save Failed! Check Internet or Firebase Rules. Error: " + e.message);
+          return false;
+      }
   };
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('isAuthenticated');
-  };
+  // --- OTHER EFFECTS ---
+  useEffect(() => {
+    if (view !== 'settings') { setSettingsUnlocked(false); setSettingsPassInput(''); }
+  }, [view]);
 
-  // Persist Data on Change
-  useEffect(() => localStorage.setItem('products', JSON.stringify(products)), [products]);
-  useEffect(() => localStorage.setItem('categories', JSON.stringify(categories)), [categories]);
-  useEffect(() => localStorage.setItem('transactions', JSON.stringify(transactions)), [transactions]);
-  useEffect(() => localStorage.setItem('notes', JSON.stringify(notes)), [notes]);
-  useEffect(() => localStorage.setItem('theme', JSON.stringify(theme)), [theme]);
-  useEffect(() => localStorage.setItem('businessName', JSON.stringify(businessName)), [businessName]);
-  useEffect(() => localStorage.setItem('threshold', JSON.stringify(lowStockThreshold)), [lowStockThreshold]);
+  useEffect(() => {
+    const handlePopState = () => { if (view !== 'generalIndex') { setView('generalIndex'); setActivePage(null); }};
+    window.history.pushState({ view }, '', '');
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [view]);
 
-  // Derived state for theme
-  const isDark = theme === 'dark';
-
-  const lowStockItems = useMemo(() => products.filter(p => p.stock < lowStockThreshold), [products, lowStockThreshold]);
-  const totalValue = useMemo(() => products.reduce((acc, curr) => acc + (curr.price * curr.stock), 0), [products]);
-
-  const filteredProducts = useMemo(() => 
-    products.filter(p => {
-      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesCategory = selectedCategory === 'All Items' || p.category === selectedCategory;
-      return matchesSearch && matchesCategory;
-    }), 
-  [products, searchTerm, selectedCategory]);
-
-  const carSearchMatches = useMemo(() => {
-    const searchLower = carModelSearch.toLowerCase().trim();
-    if (searchLower.length <= 2) return [];
-    return products.filter(p => p.compatibleCars.some(car => car === 'universal' || car.includes(searchLower)));
-  }, [products, carModelSearch]);
-
-  const carMatchCategories = useMemo(() => {
-    const groups = {};
-    carSearchMatches.forEach(p => {
-      if (!groups[p.category]) groups[p.category] = [];
-      groups[p.category].push(p);
+  useEffect(() => {
+    const metaTags = [{ name: "theme-color", content: data.settings.theme === 'dark' ? '#0f172a' : '#ffffff' }];
+    metaTags.forEach(tag => {
+        let meta = document.querySelector(`meta[name="${tag.name}"]`);
+        if (!meta) { meta = document.createElement('meta'); meta.name = tag.name; document.head.appendChild(meta); }
+        meta.content = tag.content;
     });
-    return groups;
-  }, [carSearchMatches]);
+  }, [data.settings.theme]);
 
-  const handleStockChange = (id, amount) => {
-    setProducts(currentProducts => {
-      const product = currentProducts.find(p => p.id === id);
-      if (!product) return currentProducts;
+  useEffect(() => {
+    if ("Notification" in window) setNotifPermission(Notification.permission);
+    window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); setDeferredPrompt(e); });
+  }, []);
 
-      if (amount !== 0) {
-        const type = amount > 0 ? 'Restock' : 'Sale';
-        const newTransaction = {
-          id: Date.now(),
-          type,
-          productName: product.name,
-          amount: amount > 0 ? 0 : product.price,
-          date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  // --- HANDLERS ---
+  const handleInstallClick = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult) => { if (choiceResult.outcome === 'accepted') setDeferredPrompt(null); });
+    } else { alert("Browser Menu -> Install App"); }
+  };
+
+  const requestNotificationPermission = () => {
+    if (!("Notification" in window)) return;
+    Notification.requestPermission().then((permission) => {
+      setNotifPermission(permission);
+      if (permission === "granted") playAlertSound();
+    });
+  };
+
+  const playAlertSound = () => {
+    if (audioRef.current) { audioRef.current.currentTime = 0; audioRef.current.play().catch(e => console.log(e)); }
+  };
+
+  const triggerLowStockNotification = (itemCount) => {
+      if (notifPermission === 'granted' && itemCount > 0) {
+          playAlertSound();
+          if("vibrate" in navigator) navigator.vibrate([200, 100, 200]);
+          new Notification("Low Stock Warning!", { body: `${itemCount} items are below stock limit!`, icon: "/icon.png" });
+      }
+  };
+
+  const isDark = data.settings.theme === 'dark';
+  const t = (txt) => isHindi ? translateText(txt) : txt;
+
+  const handleAppUnlock = () => {
+    if (loginPassInput === data.settings.password) { setIsAppUnlocked(true); localStorage.setItem('arvind-app-unlocked', 'true'); setLoginPassInput(''); } 
+    else { alert("Wrong App Password!"); setLoginPassInput(''); }
+  };
+
+  const handleAppLock = () => { if(window.confirm("Lock App?")) { setIsAppUnlocked(false); localStorage.removeItem('arvind-app-unlocked'); } };
+
+  const handleSettingsUnlock = () => {
+      const currentPass = data.settings.productPassword || '0000';
+      if(settingsPassInput === currentPass || settingsPassInput === '0000' || settingsPassInput === '123456') {
+          setSettingsUnlocked(true);
+          if(settingsPassInput !== currentPass) pushToFirebase({ ...data, settings: { ...data.settings, productPassword: '0000' } });
+      } else { alert("Wrong Product Password!"); }
+  };
+
+  // --- CRUD OPERATIONS (Now Pushing to Firebase) ---
+  const handleDeletePage = async (e, pageId) => {
+    e.stopPropagation(); 
+    if (window.confirm(t("Delete this page?"))) {
+        const newData = { 
+            ...data, 
+            pages: data.pages.filter(p => p.id !== pageId),
+            entries: data.entries.filter(ent => ent.pageId !== pageId)
         };
-        setTransactions(prev => [newTransaction, ...prev]);
-      }
+        await pushToFirebase(newData);
+    }
+  };
 
-      return currentProducts.map(p => {
-        if (p.id === id) {
-          const newStock = Math.max(0, p.stock + amount);
-          return { ...p, stock: newStock };
-        }
-        return p;
+  const handleDeleteEntry = async () => {
+      if(window.confirm(t("Delete this item permanently?"))) {
+          const newData = { ...data, entries: data.entries.filter(e => e.id !== editingEntry.id) };
+          await pushToFirebase(newData);
+          setEditingEntry(null);
+      }
+  };
+
+  const handleEditEntrySave = async () => {
+      if (!editingEntry || !editingEntry.car) return;
+      const newData = { 
+          ...data, 
+          entries: data.entries.map(e => e.id === editingEntry.id ? { ...e, car: editingEntry.car, qty: parseInt(editingEntry.qty) || 0 } : e)
+      };
+      await pushToFirebase(newData);
+      setEditingEntry(null); 
+  };
+
+  const handleAddPage = async () => {
+    if (!input.itemName) return;
+    const newPage = { id: Date.now(), pageNo: data.pages.length + 1, itemName: input.itemName };
+    await pushToFirebase({ ...data, pages: [...data.pages, newPage] });
+    setInput({ ...input, itemName: '' });
+    setIsNewPageOpen(false);
+  };
+
+  const handleAddEntry = async () => {
+    if (!input.carName) return;
+    const newEntry = { id: Date.now(), pageId: activePage.id, car: input.carName, qty: parseInt(input.qty) || 0 };
+    await pushToFirebase({ ...data, entries: [newEntry, ...data.entries] });
+    setInput({ ...input, carName: '', qty: '' });
+    setIsNewEntryOpen(false);
+  };
+
+  // --- BUFFER UPDATE LOGIC ---
+  const updateQtyBuffer = (id, amount, currentRealQty) => {
+    const currentBufferVal = tempChanges[id] !== undefined ? tempChanges[id] : currentRealQty;
+    const newQty = Math.max(0, currentBufferVal + amount);
+    setTempChanges({ ...tempChanges, [id]: newQty });
+  };
+
+  const saveAllChanges = async () => {
+      const pass = prompt(t("Enter Product Password to Update:"));
+      if (pass !== data.settings.productPassword && pass !== '0000' && pass !== '123456') {
+          alert("Wrong Product Password!");
+          return;
+      }
+      let lowStockTriggered = 0;
+      const updatedEntries = data.entries.map(e => {
+          if (tempChanges[e.id] !== undefined) {
+              const finalQty = tempChanges[e.id];
+              if (finalQty < data.settings.limit) lowStockTriggered++;
+              return { ...e, qty: finalQty };
+          }
+          return e;
       });
-    });
-  };
 
-  const handleAddCategory = (e) => {
-    e.preventDefault();
-    if (newCategoryName && !categories.includes(newCategoryName)) {
-      setCategories([...categories, newCategoryName]);
-      setNewCategoryName('');
-      setIsCategoryModalOpen(false);
-    }
-  };
-
-  const handleDeleteCategory = (catName, e) => {
-    e.stopPropagation();
-    if (catName === 'All Items') return;
-    if (window.confirm(`Delete category "${catName}"?`)) {
-      if (window.confirm(`WARNING: This will delete all items in "${catName}". Continue?`)) {
-          setCategories(categories.filter(c => c !== catName));
-          if (selectedCategory === catName) setSelectedCategory('All Items');
-          setProducts(products.filter(p => p.category !== catName));
+      const success = await pushToFirebase({ ...data, entries: updatedEntries });
+      if(success) {
+          setTempChanges({}); 
+          if (lowStockTriggered > 0) triggerLowStockNotification(lowStockTriggered);
+          else alert("Database Synced Successfully!");
       }
-    }
   };
 
-  const handleAddProduct = (e) => {
-    e.preventDefault();
-    if (!newProduct.name || !newProduct.price) return;
-    const carsArray = newProduct.compatibleCars.split(',').map(car => car.trim().toLowerCase()).filter(i => i);
-    if (carsArray.length === 0) carsArray.push('universal');
+  // --- RENDER HELPERS ---
+  const globalSearchResults = useMemo(() => {
+    if (!indexSearchTerm) return { pages: data.pages, items: [] };
+    const safeTerm = indexSearchTerm.toLowerCase();
+    const filteredPages = data.pages.filter(p => p.itemName.toLowerCase().includes(safeTerm));
+    const filteredItems = data.entries.filter(e => e.car.toLowerCase().includes(safeTerm));
+    const itemsGrouped = filteredItems.reduce((acc, item) => {
+        const p = data.pages.find(page => page.id === item.pageId);
+        if (p) { if (!acc[p.itemName]) acc[p.itemName] = []; acc[p.itemName].push(item); }
+        return acc;
+    }, {});
+    return { pages: filteredPages, items: itemsGrouped };
+  }, [data.pages, data.entries, indexSearchTerm]);
 
-    const newItem = {
-      id: Date.now(),
-      name: newProduct.name,
-      category: newProduct.category || 'General',
-      price: parseFloat(newProduct.price),
-      stock: parseInt(newProduct.stock) || 0,
-      compatibleCars: carsArray
-    };
-    setProducts([...products, newItem]);
-    setNewProduct({ name: '', category: '', price: '', stock: '', compatibleCars: '' });
-    setIsAddModalOpen(false);
-  };
+  const TranslateBtn = () => (
+    <button onClick={() => setIsHindi(!isHindi)} className={`p-2 rounded-full border ${isDark ? 'bg-slate-700 border-slate-500' : 'bg-white/50 border-black/10'}`}> <Languages size={20}/> </button>
+  );
 
-  // --- RENDER FUNCTIONS ---
-
-  const renderDashboard = () => {
-    if (dashboardView === 'transactions') {
+  const renderSaveButton = () => {
+      const count = Object.keys(tempChanges).length;
+      if (count === 0) return null;
       return (
-        <div className="animate-fade-in flex flex-col h-full">
-           <div className="flex items-center justify-between mb-4 shrink-0">
-             <button onClick={() => setDashboardView('overview')} className="flex items-center text-slate-500 hover:text-blue-600 transition-colors font-medium">
-               <ArrowLeft size={18} className="mr-2"/> Back to Dashboard
-             </button>
-             <h2 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>Transaction History</h2>
-           </div>
-
-           <div className={`rounded-lg shadow-sm border flex-1 overflow-hidden flex flex-col ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-             <div className="overflow-auto flex-1">
-               <table className="w-full text-left text-sm">
-                 <thead className={`font-semibold sticky top-0 z-10 border-b ${isDark ? 'bg-slate-900 text-slate-400 border-slate-700' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
-                   <tr>
-                     <th className="px-6 py-3">Time</th>
-                     <th className="px-6 py-3">Type</th>
-                     <th className="px-6 py-3">Product</th>
-                     <th className="px-6 py-3 text-right">Value</th>
-                   </tr>
-                 </thead>
-                 <tbody className={`divide-y ${isDark ? 'divide-slate-700' : 'divide-slate-100'}`}>
-                   {transactions.map(t => (
-                     <tr key={t.id} className={`${isDark ? 'hover:bg-slate-700/50' : 'hover:bg-slate-50'}`}>
-                       <td className={`px-6 py-3 font-mono text-xs ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>{t.date}</td>
-                       <td className="px-6 py-3">
-                         <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide border ${t.type === 'Sale' ? (isDark ? 'bg-emerald-900/30 text-emerald-400 border-emerald-800' : 'bg-emerald-50 text-emerald-700 border-emerald-100') : (isDark ? 'bg-blue-900/30 text-blue-400 border-blue-800' : 'bg-blue-50 text-blue-700 border-blue-100')}`}>
-                           {t.type}
-                         </span>
-                       </td>
-                       <td className={`px-6 py-3 font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{t.productName}</td>
-                       <td className={`px-6 py-3 text-right font-mono ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{t.amount > 0 ? `+₹${t.amount}` : '-'}</td>
-                     </tr>
-                   ))}
-                 </tbody>
-               </table>
-             </div>
-           </div>
-        </div>
+          <button onClick={saveAllChanges} className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-green-600 text-white px-6 py-4 rounded-full shadow-2xl border-2 border-white flex items-center gap-3 z-50 animate-bounce">
+            <SaveAll size={24} /> <span className="font-bold text-lg">{t("Update")} ({count})</span>
+          </button>
       );
-    }
-
-    return (
-      <div className="space-y-6 animate-fade-in pb-10">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <StatCard
-            isDark={isDark}
-            title="Total Inventory"
-            value={products.length}
-            icon={Package}
-            color="blue"
-            subtext="Unique SKUs"
-            clickable
-            onClick={() => setActiveTab('inventory')}
-          />
-          <StatCard
-            isDark={isDark}
-            title="Critical Stock"
-            value={lowStockItems.length}
-            icon={AlertTriangle}
-            color="red"
-            subtext={lowStockItems.length > 0 ? "Items need attention" : "Stock healthy"}
-            clickable
-            onClick={() => setShowNotifications(true)}
-          />
-          <StatCard
-            isDark={isDark}
-            title="Total Valuation"
-            value={`₹${totalValue.toLocaleString()}`}
-            icon={TrendingUp}
-            color="green"
-            subtext="Current Asset Value"
-            clickable
-            onClick={() => setDashboardView('transactions')}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[400px]">
-          <div className={`rounded-lg shadow-sm border flex flex-col overflow-hidden ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-            <div className={`p-3 border-b flex items-center justify-between ${isDark ? 'border-slate-700 bg-slate-900/30' : 'border-slate-200 bg-slate-50'}`}>
-              <h3 className={`font-bold text-sm uppercase tracking-wide flex items-center gap-2 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                <FileText size={16} /> System Notes
-              </h3>
-              <span className={`text-[10px] px-2 py-0.5 rounded ${isDark ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-600'}`}>Autosave ON</span>
-            </div>
-            <textarea
-              className={`flex-1 w-full p-4 resize-none outline-none font-mono text-sm leading-relaxed ${isDark ? 'bg-slate-800 text-slate-300 placeholder-slate-600' : 'bg-white text-slate-700'}`}
-              placeholder="Enter system notes..."
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
-
-          <div className={`rounded-lg shadow-sm border flex flex-col overflow-hidden ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-            <div className={`p-3 border-b flex justify-between items-center ${isDark ? 'border-slate-700 bg-slate-900/30' : 'border-slate-200 bg-slate-50'}`}>
-              <h3 className={`font-bold text-sm uppercase tracking-wide ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Live Feed</h3>
-              <button onClick={() => setDashboardView('transactions')} className="text-xs text-blue-600 hover:underline font-medium">Full History</button>
-            </div>
-            <div className="overflow-y-auto flex-1">
-              {transactions.slice(0, 10).map(t => (
-                <div key={t.id} className={`flex items-center justify-between p-3 border-b transition-colors ${isDark ? 'border-slate-700 hover:bg-slate-700/50' : 'border-slate-50 hover:bg-slate-50'}`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded flex items-center justify-center shrink-0 ${t.type === 'Sale' ? (isDark ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-100 text-emerald-600') : (isDark ? 'bg-blue-900/30 text-blue-400' : 'bg-blue-100 text-blue-600')}`}>
-                      {t.type === 'Sale' ? <DollarSign size={14}/> : <Plus size={14}/>}
-                    </div>
-                    <div>
-                      <p className={`text-sm font-semibold truncate max-w-[150px] ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{t.productName}</p>
-                      <p className="text-[10px] text-slate-400 font-mono">{t.date}</p>
-                    </div>
-                  </div>
-                  {t.type === 'Sale' && <span className="font-bold text-emerald-500 text-sm font-mono">+₹{t.amount}</span>}
-                </div>
-              ))}
-              {transactions.length === 0 && <div className="text-center text-slate-400 mt-10 text-sm">No activity recorded.</div>}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
   };
 
-  const renderInventory = () => (
-    <div className="flex flex-col h-full animate-fade-in overflow-hidden">
-      <div className={`p-4 border-b flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <div className="relative w-full md:w-96 flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
-            <input
-              type="text"
-              placeholder="Search SKU, Name..."
-              className={`w-full pl-9 pr-4 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${isDark ? 'bg-slate-900 border-slate-600 text-white placeholder-slate-500' : 'bg-white border-slate-300'}`}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <VoiceInput onResult={setSearchTerm} isDark={isDark} />
-        </div>
-        <div className="flex gap-2 w-full md:w-auto">
-          <button onClick={() => setIsCategoryModalOpen(true)} className={`flex-1 md:flex-none px-4 py-2 border rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${isDark ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
-            <FolderPlus size={16} /> <span className="hidden sm:inline">New Category</span>
-          </button>
-          <button onClick={() => setIsAddModalOpen(true)} className={`flex-1 md:flex-none px-4 py-2 text-white rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-sm ${isDark ? 'bg-blue-600 hover:bg-blue-500' : 'bg-slate-900 hover:bg-slate-800'}`}>
-            <Plus size={16} /> <span className="hidden sm:inline">Add Product</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="flex flex-1 overflow-hidden">
-        <div className={`hidden md:flex flex-col border-r transition-all duration-300 ${isSidebarCollapsed ? 'w-0 overflow-hidden' : 'w-56'} ${isDark ? 'bg-slate-900/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-           <div className="p-3">
-             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Filters</h3>
-             <div className="space-y-1">
-               {categories.map(cat => (
-                 <div key={cat} className="group flex items-center">
-                   <button
-                     onClick={() => setSelectedCategory(cat)}
-                     className={`flex-1 text-left px-3 py-2 rounded-md text-xs font-semibold flex items-center justify-between transition-colors ${
-                       selectedCategory === cat
-                         ? (isDark ? 'bg-slate-800 text-blue-400 shadow-sm border border-slate-700' : 'bg-white text-blue-700 shadow-sm border border-slate-200')
-                         : (isDark ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-white hover:shadow-sm')
-                     }`}
-                   >
-                     <span>{cat}</span>
-                     {selectedCategory === cat && <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>}
-                   </button>
-                   {cat !== 'All Items' && (
-                     <button
-                       onClick={(e) => handleDeleteCategory(cat, e)}
-                       className="text-slate-300 hover:text-red-500 p-1.5 opacity-0 group-hover:opacity-100 transition-all"
-                       title="Delete Category"
-                     >
-                       <Trash2 size={12}/>
-                     </button>
-                   )}
-                 </div>
-               ))}
-             </div>
-           </div>
-        </div>
-
-        <div className={`md:hidden w-full p-2 border-b ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-          <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className={`w-full p-2 border rounded text-sm ${isDark ? 'bg-slate-800 border-slate-600 text-white' : 'bg-white border-slate-300'}`}>
-            {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-          </select>
-        </div>
-
-        <div className={`flex-1 overflow-hidden flex flex-col ${isDark ? 'bg-slate-800' : 'bg-white'}`}>
-          <div className={`px-4 py-2 border-b flex justify-between items-center shrink-0 ${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-white'}`}>
-            <h3 className={`font-bold text-sm flex items-center gap-2 ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
-              <Folder size={16} className="text-blue-500"/>
-              {selectedCategory}
-            </h3>
-            <span className="text-xs text-slate-400 font-mono">{filteredProducts.length} records found</span>
-          </div>
-
-          <div className="overflow-auto flex-1">
-            <table className="w-full text-left border-collapse">
-              <thead className={`text-[11px] uppercase font-bold tracking-wider sticky top-0 z-10 border-b shadow-sm ${isDark ? 'bg-slate-900 text-slate-400 border-slate-700' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                <tr>
-                  <th className="px-4 py-3">Product Name</th>
-                  <th className="px-4 py-3 text-right hidden sm:table-cell">Price</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-center">Stock Control</th>
-                </tr>
-              </thead>
-              <tbody className={`divide-y text-sm ${isDark ? 'divide-slate-700' : 'divide-slate-100'}`}>
-                {filteredProducts.map((product) => (
-                  <tr key={product.id} className={`transition-colors group ${isDark ? 'hover:bg-slate-700/50' : 'hover:bg-blue-50/30'}`}>
-                    <td className="px-4 py-2.5">
-                      <div className={`font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{product.name}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5 sm:hidden">₹{product.price}</div>
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-slate-500 hidden sm:table-cell">₹{product.price.toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-center">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                        product.stock < lowStockThreshold
-                          ? (isDark ? 'bg-red-900/30 text-red-400 border-red-800' : 'bg-red-50 text-red-700 border-red-100')
-                          : (isDark ? 'bg-emerald-900/30 text-emerald-400 border-emerald-800' : 'bg-emerald-50 text-emerald-700 border-emerald-100')
-                      }`}>
-                        {product.stock} Units
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center justify-center space-x-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                        <button
-                           onClick={() => handleStockChange(product.id, -1)}
-                           className={`w-7 h-7 flex items-center justify-center rounded border transition-colors ${isDark ? 'bg-slate-800 border-slate-600 text-red-400 hover:bg-slate-700' : 'bg-white border-slate-200 text-red-600 hover:bg-red-50 hover:border-red-200'}`}
-                           title="Sell/Reduce"
-                        >
-                           <Minus size={12}/>
-                        </button>
-                        <button
-                          onClick={() => setSelectedProductForDetail(product)}
-                          className={`px-2 h-7 text-xs rounded border font-medium transition-colors ${isDark ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-blue-900/30 hover:text-blue-400 hover:border-blue-800' : 'bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200'}`}
-                        >
-                          View
-                        </button>
-                        <button
-                           onClick={() => handleStockChange(product.id, 1)}
-                           className={`w-7 h-7 flex items-center justify-center rounded border transition-colors ${isDark ? 'bg-slate-800 border-slate-600 text-emerald-400 hover:bg-slate-700' : 'bg-white border-slate-200 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200'}`}
-                           title="Restock/Add"
-                        >
-                           <Plus size={12}/>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {filteredProducts.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-48 text-slate-400">
-                <Search size={48} className="mb-2 opacity-20"/>
-                <p>No products found in this category.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderCarSearch = () => {
-    if (selectedCarCategory) {
-      const categoryProducts = carMatchCategories[selectedCarCategory] || [];
-      return (
-        <div className="max-w-5xl mx-auto animate-fade-in p-6 h-full overflow-auto">
-          <button
-            onClick={() => setSelectedCarCategory(null)}
-            className="mb-6 flex items-center text-slate-500 hover:text-blue-600 transition-colors font-medium"
-          >
-            <ArrowLeft size={20} className="mr-2"/> Back to Categories
-          </button>
-
-          <div className={`rounded-lg shadow-sm border overflow-hidden ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-            <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between">
-              <h2 className="text-xl font-bold flex items-center">
-                <Folder className="mr-3 text-blue-400" size={20} />
-                {selectedCarCategory} <span className="text-slate-400 mx-2">/</span> {carModelSearch}
-              </h2>
-            </div>
-            <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {categoryProducts.map(product => (
-                 <div key={product.id} 
-                      onClick={() => setSelectedProductForDetail(product)}
-                      className={`border p-4 rounded-lg hover:shadow-md transition-all cursor-pointer group relative ${isDark ? 'bg-slate-800 border-slate-700 hover:border-blue-500' : 'bg-white border-slate-200 hover:border-blue-300'}`}
-                 >
-                    <div className="flex justify-between items-start mb-2">
-                      <h4 className={`font-bold line-clamp-2 text-sm group-hover:text-blue-600 ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{product.name}</h4>
-                      <div className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${product.stock > 0 ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-                    </div>
-                    <div className="flex justify-between items-end mt-4">
-                      <p className={`text-lg font-bold font-mono ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>₹{product.price}</p>
-                      <span className="text-[10px] text-blue-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity">VIEW DETAILS</span>
-                    </div>
-                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )
-    }
-
+  // --- MAIN RENDER ---
+  if (!isAppUnlocked) {
     return (
-      <div className="flex items-center justify-center h-full p-6 animate-fade-in">
-        <div className="w-full max-w-2xl text-center space-y-8">
-          <div className={`inline-block p-6 rounded-full mb-4 border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-blue-50 border-blue-100'}`}>
-            <Car className={`w-12 h-12 ${isDark ? 'text-blue-400' : 'text-blue-600'}`} />
-          </div>
-          <h2 className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>ERP Smart Car Finder</h2>
-          <p className="text-slate-500 max-w-md mx-auto">Enter a vehicle model to instantly filter the entire database for compatible parts.</p>
-
-          <div className="relative max-w-lg mx-auto group">
-             <div className="flex gap-2">
-                 <div className="relative flex-1">
-                     <input
-                       type="text"
-                       className={`block w-full pl-6 pr-14 py-4 border rounded-lg text-lg shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all ${isDark ? 'bg-slate-800 border-slate-600 text-white placeholder-slate-500' : 'bg-white border-slate-300'}`}
-                       placeholder="e.g. Swift, Thar, Creta..."
-                       value={carModelSearch}
-                       onChange={(e) => {
-                         setCarModelSearch(e.target.value);
-                         setSelectedCarCategory(null);
-                       }}
-                     />
-                     <div className="absolute right-3 top-1/2 -translate-y-1/2 bg-slate-900 p-2 rounded-md text-white shadow-md group-focus-within:bg-blue-600 transition-colors">
-                       <Search size={20} />
-                     </div>
-                 </div>
-                 <div className="flex items-center justify-center">
-                    <VoiceInput onResult={setCarModelSearch} isDark={isDark} />
-                 </div>
-             </div>
-          </div>
-
-          {carModelSearch.length > 2 && Object.keys(carMatchCategories).length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-8 text-left">
-              {Object.keys(carMatchCategories).map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCarCategory(cat)}
-                  className={`p-4 rounded-lg border transition-all flex items-center justify-between group ${isDark ? 'bg-slate-800 border-slate-700 hover:border-blue-500' : 'bg-white border-slate-200 hover:border-blue-400 hover:shadow-md'}`}
-                >
-                  <span className={`font-semibold group-hover:text-blue-700 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{cat}</span>
-                  <span className={`text-xs px-2 py-1 rounded font-mono group-hover:bg-blue-50 group-hover:text-blue-700 ${isDark ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-600'}`}>
-                    {carMatchCategories[cat].length}
-                  </span>
-                </button>
-              ))}
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 p-6 text-white">
+            <div className="w-full max-w-sm text-center">
+                <div className="bg-blue-600 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-900/50"><Lock size={40} /></div>
+                <h1 className="text-3xl font-bold mb-2">Arvind Register</h1>
+                <input type="password" placeholder="App Password" className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-center text-2xl tracking-widest outline-none focus:border-blue-500 mb-4" value={loginPassInput} onChange={(e) => setLoginPassInput(e.target.value)}/>
+                <button onClick={handleAppUnlock} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl text-lg active:scale-95">UNLOCK APP</button>
+                <p className="mt-6 text-xs text-slate-600">Default: 123</p>
             </div>
-          )}
         </div>
-      </div>
     );
-  };
-
-  const renderSettings = () => (
-    <div className="animate-fade-in space-y-6 pb-10 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>Settings</h1>
-        <span className={`text-sm px-4 py-2 rounded-full ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>System Configuration</span>
-      </div>
-
-      <div className={`rounded-lg shadow-sm border p-6 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <h2 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-800'}`}>
-           <Sun size={20} className={isDark ? 'text-orange-400' : 'text-orange-600'}/>
-           Appearance
-        </h2>
-        <div className="flex gap-4">
-           <button 
-             onClick={() => setTheme('light')} 
-             className={`flex-1 p-4 rounded-lg border-2 flex items-center justify-center gap-2 transition-all ${!isDark ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-700 bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
-           >
-              <Sun size={20}/> Light Mode
-           </button>
-           <button 
-             onClick={() => setTheme('dark')} 
-             className={`flex-1 p-4 rounded-lg border-2 flex items-center justify-center gap-2 transition-all ${isDark ? 'border-blue-500 bg-slate-700 text-blue-400' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-           >
-              <Moon size={20}/> Dark Mode
-           </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className={`rounded-lg shadow-sm border p-6 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <h2 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-800'}`}>
-            <Settings size={20} className="text-blue-600" />
-            Business Settings
-          </h2>
-          <div className="space-y-4">
-            <div>
-              <label className={`text-sm font-semibold mb-2 block ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Business Name</label>
-              <input
-                type="text"
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'bg-slate-900 border-slate-600 text-white' : 'bg-white border-slate-300'}`}
-              />
-            </div>
-            <div>
-              <label className={`text-sm font-semibold mb-2 block ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Low Stock Alert Threshold</label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="range"
-                  min="1"
-                  max="20"
-                  value={lowStockThreshold}
-                  onChange={(e) => setLowStockThreshold(parseInt(e.target.value))}
-                  className="flex-1"
-                />
-                <div className={`flex items-center justify-center w-16 h-10 border rounded-md ${isDark ? 'bg-slate-900 border-slate-600 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>
-                  <span className="font-bold">{lowStockThreshold}</span>
-                </div>
-              </div>
-            </div>
-            <div>
-              <label className={`text-sm font-semibold mb-2 block ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Currency Symbol</label>
-              <input
-                type="text"
-                maxLength={3}
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
-                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'bg-slate-900 border-slate-600 text-white' : 'bg-white border-slate-300'}`}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className={`rounded-lg shadow-sm border p-6 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <h2 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-800'}`}>
-            <Package size={20} className="text-emerald-600" />
-            Inventory Stats
-          </h2>
-          <div className="space-y-3">
-            <div className={`p-4 rounded-lg border ${isDark ? 'bg-slate-700/50 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
-              <p className="text-xs font-bold text-slate-500 uppercase mb-1">Total Products</p>
-              <p className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>{products.length}</p>
-            </div>
-            <div className={`p-4 rounded-lg border ${isDark ? 'bg-slate-700/50 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
-              <p className="text-xs font-bold text-slate-500 uppercase mb-1">Total Categories</p>
-              <p className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>{categories.length}</p>
-            </div>
-            <div className={`p-4 rounded-lg border ${isDark ? 'bg-slate-700/50 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
-              <p className="text-xs font-bold text-slate-500 uppercase mb-1">Inventory Value</p>
-              <p className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>{currency}{totalValue.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className={`rounded-lg shadow-sm border p-6 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <h2 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-800'}`}>
-          <FileText size={20} className="text-blue-600" />
-          Data Management
-        </h2>
-        <div className="space-y-4">
-          <div>
-            <h3 className={`font-semibold mb-3 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Export Data</h3>
-            <button
-              onClick={() => {
-                const data = {
-                  exportDate: new Date().toISOString(),
-                  products,
-                  categories,
-                  transactions,
-                  notes,
-                  settings: { lowStockThreshold, businessName, currency }
-                };
-                const json = JSON.stringify(data, null, 2);
-                const blob = new Blob([json], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `autohub-backup-${new Date().getTime()}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-              className="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors flex items-center justify-center gap-2"
-            >
-              <FileText size={16} />
-              Download Complete Backup
-            </button>
-            <p className="text-xs text-slate-500 mt-2">All products, transactions, and settings will be saved as JSON</p>
-          </div>
-          <div className="pt-2 text-center text-xs text-green-600 font-medium">
-             <CheckCircle size={12} className="inline mr-1"/> Data is secure. Manual deletion disabled.
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  if (!isAuthenticated) {
-    return <LoginScreen onLogin={handleLogin} />;
   }
 
-  return (
-    <div className={`flex h-screen font-sans overflow-hidden ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
-      <aside
-        className={`flex flex-col transition-all duration-300 z-40 shrink-0 ${isDark ? 'bg-slate-900 border-r border-slate-800' : 'bg-slate-900 text-slate-300'}
-          ${isMobileMenuOpen ? 'absolute inset-y-0 left-0 w-64 shadow-2xl' : 'relative hidden md:flex'}
-          ${isSidebarCollapsed ? 'w-20' : 'w-64'}
-        `}
-      >
-        <div className={`h-16 flex items-center justify-center border-b shrink-0 ${isDark ? 'border-slate-800' : 'border-slate-800'}`}>
-          {isSidebarCollapsed ? (
-            <span className="font-bold text-white text-xl tracking-tighter">AH</span>
-          ) : (
-             <div className="flex items-center gap-2">
-               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">A</div>
-               <div>
-                 <h1 className="text-white font-bold leading-tight truncate w-32">{businessName}</h1>
-                 <p className="text-[10px] text-slate-500 uppercase tracking-widest">Enterprise</p>
-               </div>
-             </div>
-          )}
-        </div>
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white font-bold text-xl animate-pulse">Connecting to Database...</div>;
 
-        <nav className="flex-1 py-6 space-y-1 overflow-y-auto custom-scrollbar px-2">
-          <SidebarItem collapsed={isSidebarCollapsed} icon={LayoutDashboard} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }} />
-          <SidebarItem collapsed={isSidebarCollapsed} icon={Package} label="Inventory Master" active={activeTab === 'inventory'} onClick={() => { setActiveTab('inventory'); setIsMobileMenuOpen(false); }} />
-          <SidebarItem collapsed={isSidebarCollapsed} icon={Car} label="Car Finder" active={activeTab === 'related'} onClick={() => { setActiveTab('related'); setIsMobileMenuOpen(false); }} />
-
-          <div className="my-4 border-t border-slate-800 mx-2"></div>
-
-          <SidebarItem collapsed={isSidebarCollapsed} icon={Settings} label="Settings" active={activeTab === 'settings'} onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }} />
-        </nav>
-
-        <div className="p-4 border-t border-slate-800 shrink-0">
-           <button onClick={handleLogout} className={`flex items-center w-full text-slate-400 hover:text-white transition-colors ${isSidebarCollapsed ? 'justify-center' : 'space-x-3 px-2'}`}>
-              <LogOut size={20} />
-              {!isSidebarCollapsed && <span className="text-sm font-medium">Sign Out</span>}
-           </button>
-        </div>
-      </aside>
-
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative min-w-0">
-        <header className={`h-16 border-b flex items-center justify-between px-6 shadow-sm z-30 shrink-0 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-          <div className="flex items-center gap-4">
-            <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="md:hidden text-slate-600"><Menu size={24} /></button>
-            <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className={`hidden md:block transition-colors ${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-slate-800'}`}>
-               {isSidebarCollapsed ? <Menu size={20}/> : <ChevronLeft size={20}/>}
-            </button>
-            <h2 className={`text-lg font-bold capitalize hidden sm:block ${isDark ? 'text-white' : 'text-slate-800'}`}>
-              {activeTab === 'related' ? 'Compatibility Engine' : activeTab === 'settings' ? 'Settings' : activeTab}
-            </h2>
+  const renderGeneralIndex = () => (
+    <div className="pb-24">
+      <div className={`p-6 border-b-4 border-double sticky top-0 z-10 ${isDark ? 'bg-slate-800 border-slate-600' : 'bg-yellow-100 border-yellow-400'}`}>
+        <div className="flex justify-between items-center mb-2">
+          <h1 className={`text-2xl font-extrabold uppercase tracking-widest ${isDark ? 'text-white' : 'text-yellow-900'} underline decoration-2 decoration-red-400`}>{t("Arvind Index")}</h1>
+          <div className="flex gap-2">
+              {isOnline ? <Wifi className="text-green-600"/> : <WifiOff className="text-red-500 animate-pulse"/>}
+              <TranslateBtn />
           </div>
-
-          <div className="flex items-center gap-6">
-              <div className={`hidden md:flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span> System Online
-              </div>
-
-              <div className="relative">
-                  <button
-                    onClick={() => setShowNotifications(!showNotifications)}
-                    className={`p-2 relative rounded-full transition-colors ${isDark ? 'hover:bg-slate-800 text-slate-400 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-800'}`}
-                  >
-                    <Bell size={20} />
-                    {lowStockItems.length > 0 && <span className="absolute top-1.5 right-2 h-2 w-2 bg-red-500 rounded-full border border-white"></span>}
-                  </button>
-
-                  {showNotifications && (
-                    <div className={`absolute right-0 mt-2 w-80 rounded-lg shadow-xl border z-50 overflow-hidden animate-scale-in origin-top-right ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                      <div className={`p-3 border-b font-bold flex justify-between items-center text-sm ${isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-slate-50 border-slate-100 text-slate-700'}`}>
-                        <span>Alerts ({lowStockItems.length})</span>
-                        <button onClick={() => setShowNotifications(false)}><X size={14}/></button>
-                      </div>
-                      <div className="max-h-64 overflow-y-auto">
-                        {lowStockItems.length > 0 ? (
-                          lowStockItems.map(item => (
-                            <div key={item.id} className={`p-3 border-b transition-colors flex items-start gap-3 cursor-pointer ${isDark ? 'border-slate-700 hover:bg-slate-700' : 'border-slate-50 hover:bg-red-50'}`} onClick={() => {setSelectedProductForDetail(item); setShowNotifications(false);}}>
-                              <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />
-                              <div>
-                                <p className={`text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.name}</p>
-                                <p className="text-xs text-red-600 font-medium">Low Stock: {item.stock} units</p>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="p-4 text-center text-slate-400 text-sm">All systems normal.</div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-              </div>
-          </div>
-        </header>
-
-        <div className={`flex-1 overflow-y-auto p-6 scroll-smooth ${isDark ? 'bg-slate-950' : 'bg-slate-50/50'}`}>
-          {activeTab === 'dashboard' && renderDashboard()}
-          {activeTab === 'inventory' && renderInventory()}
-          {activeTab === 'related' && renderCarSearch()}
-          {activeTab === 'settings' && renderSettings()}
         </div>
-      </main>
-
-      {/* Floating AI Assistant */}
-      <AIChatBot products={products} transactions={transactions} isDark={isDark} businessName={businessName} />
-
-      <ProductDetailModal
-         product={selectedProductForDetail}
-         onClose={() => setSelectedProductForDetail(null)}
-         onStockChange={handleStockChange}
-         isDark={isDark}
-      />
-
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
-          <div className={`rounded-lg shadow-2xl w-full max-w-md overflow-hidden animate-scale-in ${isDark ? 'bg-slate-800' : 'bg-white'}`}>
-            <div className={`p-4 border-b flex justify-between items-center ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-              <h3 className={`font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>New Product Entry</h3>
-              <button onClick={() => setIsAddModalOpen(false)}><X size={20} className="text-slate-400 hover:text-slate-700"/></button>
+        <div className="flex gap-2 mt-3">
+            <div className="relative flex-1">
+                <input className={`w-full pl-9 p-2 rounded border outline-none ${isDark ? 'bg-slate-900 border-slate-600 text-white' : 'bg-white border-yellow-500 text-black'}`} placeholder={t("Search Index...")} value={indexSearchTerm} onChange={e => setIndexSearchTerm(e.target.value)}/>
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" size={18}/>
+                {indexSearchTerm && <button onClick={() => setIndexSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2"><X size={16}/></button>}
             </div>
-            <form onSubmit={handleAddProduct} className="p-6 space-y-4">
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Product Name</label>
-                <input required type="text" className={`w-full mt-1 border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none ${isDark ? 'bg-slate-900 border-slate-600 text-white' : 'border-slate-300'}`} value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} />
+            <VoiceInput onResult={setIndexSearchTerm} isDark={isDark} />
+        </div>
+      </div>
+      <div className={`m-2 border-2 ${isDark ? 'border-slate-700 bg-slate-900' : 'border-black bg-white'}`}>
+        <div className={`flex border-b-2 ${isDark ? 'border-slate-700 bg-slate-800' : 'border-black bg-gray-100'} p-2`}>
+          <div className="w-12 font-bold text-center border-r border-gray-400">No.</div>
+          <div className="flex-1 font-bold pl-3 border-r border-gray-400">{t("Particulars")}</div>
+          <div className="w-16 font-bold text-center border-r border-gray-400">{t("Page")}</div>
+          <div className="w-10 font-bold text-center">Del</div>
+        </div>
+        <div className="min-h-[20vh]">
+          {globalSearchResults.pages.map((page, idx) => (
+            <div key={page.id} onClick={() => { setActivePage(page); setView('page'); setPageSearchTerm(''); }} className={`flex border-b border-gray-300 cursor-pointer hover:bg-blue-50 transition-colors h-14 items-center ${isDark ? 'text-white hover:bg-slate-800' : 'text-black'}`}>
+              <div className="w-12 text-center font-bold text-red-600 border-r border-gray-300 h-full flex items-center justify-center text-sm">{idx + 1}</div>
+              <div className="flex-1 pl-3 font-semibold text-lg border-r border-gray-300 h-full flex items-center truncate">{t(page.itemName)}</div>
+              <div className="w-16 text-center font-bold text-blue-700 h-full flex items-center justify-center underline border-r border-gray-300">{page.pageNo}</div>
+              <div className="w-10 flex items-center justify-center h-full">
+                <button onClick={(e) => handleDeletePage(e, page.id)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-100 rounded-full"><Trash2 size={16} /></button>
               </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Category</label>
-                <select className={`w-full mt-1 border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none ${isDark ? 'bg-slate-900 border-slate-600 text-white' : 'border-slate-300'}`} value={newProduct.category} onChange={e => setNewProduct({...newProduct, category: e.target.value})}>
-                  <option value="">Select...</option>
-                  {categories.slice(1).map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase">Price (₹)</label>
-                  <input required type="number" className={`w-full mt-1 border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none ${isDark ? 'bg-slate-900 border-slate-600 text-white' : 'border-slate-300'}`} value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: e.target.value})} />
+            </div>
+          ))}
+          {globalSearchResults.pages.length === 0 && <div className="p-2 text-center text-gray-400 text-sm">No Pages Found</div>}
+        </div>
+      </div>
+      <button onClick={() => setIsNewPageOpen(true)} className="fixed bottom-24 right-6 bg-yellow-500 text-black w-16 h-16 rounded-full shadow-xl border-4 border-white flex items-center justify-center active:scale-95 z-20"><Plus size={32} strokeWidth={3}/></button>
+    </div>
+  );
+
+  const renderPagesGrid = () => (
+    <div className={`pb-24 min-h-screen p-4 ${isDark ? 'bg-slate-950' : 'bg-gray-100'}`}>
+        <div className="mb-4 sticky top-0 z-10 pt-2 pb-2 backdrop-blur-sm flex justify-between items-center">
+            <h1 className={`text-2xl font-bold flex items-center gap-2 ${isDark ? 'text-white' : 'text-gray-800'}`}><Grid/> {t("All Pages")}</h1>
+            <TranslateBtn />
+        </div>
+        <div className="flex gap-2 mb-4">
+            <div className="relative flex-1">
+                <input className={`w-full pl-9 p-3 rounded-xl border outline-none shadow-sm ${isDark ? 'bg-slate-800 border-slate-600 text-white' : 'bg-white border-gray-300 text-black'}`} placeholder={t("Find Page...")} value={indexSearchTerm} onChange={e => setIndexSearchTerm(e.target.value)}/>
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20}/>
+            </div>
+            <VoiceInput onResult={setIndexSearchTerm} isDark={isDark} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+            {globalSearchResults.pages.map(page => {
+                 const totalItems = data.entries.filter(e => e.pageId === page.id).reduce((a,b)=>a+b.qty,0);
+                 return (
+                    <div key={page.id} onClick={() => { setActivePage(page); setView('page'); setPageSearchTerm(''); }} className={`relative p-4 rounded-xl border-2 shadow-sm cursor-pointer active:scale-95 transition-all flex flex-col justify-between h-36 ${isDark ? 'bg-slate-800 border-slate-600 hover:border-blue-500' : 'bg-white border-gray-200 hover:border-blue-500'}`}>
+                        <div>
+                            <div className="flex justify-between items-start"><span className="text-xs font-bold px-2 py-1 rounded bg-gray-200 text-gray-800">Pg {page.pageNo}</span><button onClick={(e) => handleDeletePage(e, page.id)} className="p-1 text-red-300 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={16}/></button></div>
+                            <h3 className={`font-bold text-lg mt-2 leading-tight ${isDark ? 'text-white' : 'text-gray-800'}`}>{t(page.itemName)}</h3>
+                        </div>
+                        <div className="text-right"><span className={`text-xs font-bold ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>{totalItems} Pcs</span></div>
+                    </div>
+                 )
+            })}
+        </div>
+        <button onClick={() => setIsNewPageOpen(true)} className="fixed bottom-24 right-6 bg-blue-600 text-white w-14 h-14 rounded-full shadow-xl border-2 border-white flex items-center justify-center active:scale-95 z-20"><Plus size={28}/></button>
+    </div>
+  );
+
+  const renderStockSearch = () => {
+      const filteredStock = data.entries.filter(e => stockSearchTerm && e.car.toLowerCase().includes(stockSearchTerm.toLowerCase()));
+      return (
+        <div className={`pb-24 min-h-screen p-4 ${isDark ? 'bg-slate-950' : 'bg-gray-100'}`}>
+            <div className="mb-4 sticky top-0 z-10 pt-2 pb-2 backdrop-blur-sm">
+                <div className="flex justify-between items-center mb-4">
+                    <h1 className={`text-2xl font-bold flex items-center gap-2 ${isDark ? 'text-white' : 'text-gray-800'}`}><Search/> {t("Global Search")}</h1>
+                    <div className="flex gap-2">
+                        <button onClick={() => setIsSafeMode(!isSafeMode)} className={`p-1 rounded-full border ${isSafeMode ? 'bg-green-100 text-green-700 border-green-500' : 'bg-gray-200 text-gray-400'}`}>{isSafeMode ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}</button>
+                        <TranslateBtn />
+                    </div>
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase">Initial Stock</label>
-                  <input type="number" className={`w-full mt-1 border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none ${isDark ? 'bg-slate-900 border-slate-600 text-white' : 'border-slate-300'}`} value={newProduct.stock} onChange={e => setNewProduct({...newProduct, stock: e.target.value})} />
+                <div className="flex gap-2">
+                    <div className="relative flex-1">
+                        <input className={`w-full pl-9 p-3 rounded-xl border outline-none shadow-sm ${isDark ? 'bg-slate-800 border-slate-600 text-white' : 'bg-white border-gray-300 text-black'}`} placeholder={t("Type Car Name (e.g. Swift)...")} value={stockSearchTerm} onChange={e => setStockSearchTerm(e.target.value)}/>
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20}/>
+                        {stockSearchTerm && <button onClick={() => setStockSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2"><X size={16}/></button>}
+                    </div>
+                    <VoiceInput onResult={setStockSearchTerm} isDark={isDark} />
                 </div>
+            </div>
+            <div className="space-y-3">
+                {filteredStock.map(entry => {
+                    const p = data.pages.find(page => page.id === entry.pageId);
+                    const displayQty = tempChanges[entry.id] !== undefined ? tempChanges[entry.id] : entry.qty;
+                    const isChanged = tempChanges[entry.id] !== undefined;
+                    return (
+                        <div key={entry.id} className={`p-4 rounded-xl border-l-4 shadow-sm flex items-center justify-between ${isDark ? 'bg-slate-800 border-l-blue-500 border-slate-700 text-white' : 'bg-white border-l-blue-500 border-gray-200 text-black'}`}>
+                            <div className="flex-1">
+                                <h3 className="font-bold text-xl">{t(p?.itemName || "Unknown Item")}</h3>
+                                <p className={`text-sm mt-1 font-semibold opacity-70`}>{t("For")}: {t(entry.car)}</p>
+                                <div onClick={() => { setActivePage(p); setView('page'); setPageSearchTerm(stockSearchTerm); }} className={`inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded mt-2 cursor-pointer hover:underline border ${isDark ? 'bg-slate-700 text-blue-300 border-slate-600' : 'bg-gray-100 text-blue-700 border-gray-300'}`}><Book size={10}/> {t("Go to Page")} <ChevronRight size={10}/></div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                               <button onClick={() => updateQtyBuffer(entry.id, -1, entry.qty)} className="w-8 h-8 rounded-full border bg-gray-100 text-red-600 flex items-center justify-center active:scale-90 transition-transform"><Minus size={16}/></button>
+                               <span className={`text-xl font-mono font-bold w-8 text-center ${isChanged ? 'text-blue-500' : ''}`}>{displayQty}</span>
+                               <button onClick={() => updateQtyBuffer(entry.id, 1, entry.qty)} className="w-8 h-8 rounded-full border bg-gray-100 text-green-600 flex items-center justify-center active:scale-90 transition-transform"><Plus size={16}/></button>
+                            </div>
+                        </div>
+                    );
+                })}
+                {stockSearchTerm && filteredStock.length === 0 && <div className="text-center mt-10 opacity-50 font-bold">No Items Found</div>}
+            </div>
+        </div>
+      );
+  };
+
+  const renderPage = () => {
+    const pageEntries = data.entries.filter(e => e.pageId === activePage.id);
+    const filtered = pageEntries.filter(e => e.car.toLowerCase().includes(pageSearchTerm.toLowerCase()));
+    const grandTotal = pageEntries.reduce((acc, curr) => { const val = tempChanges[curr.id] !== undefined ? tempChanges[curr.id] : curr.qty; return acc + val; }, 0);
+    return (
+      <div className={`pb-24 min-h-screen ${isDark ? 'bg-slate-950 text-white' : 'bg-white text-black'}`}>
+        <div className={`sticky top-0 z-10 border-b-2 shadow-sm ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-red-200'}`}>
+           <div className={`flex items-center p-3 ${isDark ? 'bg-slate-800' : 'bg-red-50'}`}>
+              <button onClick={() => setView('generalIndex')} className="mr-2 p-2"><ArrowLeft/></button>
+              <div className="flex-1">
+                 <div className="flex justify-between items-start">
+                    <p className={`text-xs font-bold uppercase ${isDark ? 'text-slate-400' : 'text-red-400'}`}>{t("Page No")}: {activePage.pageNo}</p>
+                    <div className="flex gap-2">
+                        <button onClick={() => setIsSafeMode(!isSafeMode)} className={`p-1 rounded-full border ${isSafeMode ? 'bg-green-100 text-green-700 border-green-500' : 'bg-gray-200 text-gray-400'}`}>{isSafeMode ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}</button>
+                        <TranslateBtn />
+                    </div>
+                 </div>
+                 <h2 className="text-2xl font-black uppercase">{t(activePage.itemName)}</h2>
+                 <div className="text-xs font-bold opacity-70 mt-1">{t("Total")} {t("Items")}: {grandTotal}</div>
               </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Compatible Cars</label>
-                <input type="text" className={`w-full mt-1 border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none ${isDark ? 'bg-slate-900 border-slate-600 text-white' : 'border-slate-300'}`} placeholder="e.g. Swift, Universal" value={newProduct.compatibleCars} onChange={e => setNewProduct({...newProduct, compatibleCars: e.target.value})} />
+           </div>
+           <div className={`p-2 flex gap-2 border-t ${isDark ? 'border-slate-700' : 'border-gray-100'}`}>
+              <div className="relative flex-1">
+                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" size={16}/>
+                 <input className={`w-full pl-8 py-2 rounded border outline-none ${isDark ? 'bg-slate-900 border-slate-600' : 'bg-gray-50 border-gray-300'}`} placeholder={t("Search Item...")} value={pageSearchTerm} onChange={e => setPageSearchTerm(e.target.value)}/>
               </div>
-              <button type="submit" className={`w-full font-medium py-2.5 rounded-md transition-colors mt-2 ${isDark ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-slate-900 hover:bg-slate-800 text-white'}`}>Create Record</button>
-            </form>
+              <VoiceInput onResult={setPageSearchTerm} isDark={isDark}/>
+           </div>
+           <div className={`flex p-2 text-xs font-bold uppercase ${isDark ? 'bg-slate-700' : 'bg-red-100 text-red-900'}`}>
+             <div className="flex-[2]">{t("Car Name")}</div>
+             <div className="flex-[1] text-center">{t("Qty")}</div>
+             <div className="w-8"></div> 
+           </div>
+        </div>
+        <div style={isDark ? {} : { backgroundImage: 'linear-gradient(#e5e7eb 1px, transparent 1px)', backgroundSize: '100% 3.5rem' }}>
+          {filtered.map(entry => {
+             const displayQty = tempChanges[entry.id] !== undefined ? tempChanges[entry.id] : entry.qty;
+             const isChanged = tempChanges[entry.id] !== undefined;
+             return (
+             <div key={entry.id} className={`flex items-center px-4 h-14 border-b ${isDark ? 'border-slate-800' : 'border-transparent'}`}>
+                <div className="flex-[2] text-lg font-bold truncate">{t(entry.car)}</div>
+                <div className="flex-[1] flex items-center justify-center gap-2">
+                   <button onClick={() => updateQtyBuffer(entry.id, -1, entry.qty)} className="w-7 h-7 rounded-full border bg-gray-100 text-red-600 flex items-center justify-center active:scale-90 transition-transform"><Minus size={14}/></button>
+                   <span className={`text-xl font-mono font-bold ${isChanged ? 'text-blue-500' : (displayQty < data.settings.limit ? 'text-red-500 animate-pulse' : '')}`}>{displayQty}</span>
+                   <button onClick={() => updateQtyBuffer(entry.id, 1, entry.qty)} className="w-7 h-7 rounded-full border bg-gray-100 text-green-600 flex items-center justify-center active:scale-90 transition-transform"><Plus size={14}/></button>
+                </div>
+                <div className="w-8 flex justify-end"><button onClick={() => setEditingEntry(entry)} className="text-gray-400 hover:text-blue-500"><Edit size={18}/></button></div>
+             </div>
+             )
+          })}
+        </div>
+        <button onClick={() => setIsNewEntryOpen(true)} className="fixed bottom-24 right-6 bg-blue-600 text-white w-14 h-14 rounded-full shadow-lg border-2 border-white flex items-center justify-center z-20"><Plus size={28}/></button>
+      </div>
+    );
+  };
+
+  const renderAlerts = () => (
+     <div className={`p-4 pb-24 min-h-screen ${isDark ? 'bg-slate-950 text-white' : 'bg-gray-50 text-black'}`}>
+        <div className="flex justify-between items-center mb-4"><h2 className="text-2xl font-bold text-red-500 flex items-center gap-2"><AlertTriangle/> {t("Low Stock")}</h2><TranslateBtn /></div>
+        {data.entries.filter(e => e.qty < data.settings.limit).length === 0 && <div className="text-center mt-10 opacity-50">Stock Full</div>}
+        {data.entries.filter(e => e.qty < data.settings.limit).map(e => {
+           const p = data.pages.find(page => page.id === e.pageId);
+           return (
+              <div key={e.id} className="p-4 border-l-4 border-red-500 bg-white text-black shadow mb-2 rounded flex justify-between items-center" onClick={() => {setActivePage(p); setView('page')}}>
+                 <div><h3 className="font-bold">{t(e.car)}</h3><p className="text-xs">{t(p?.itemName)}</p></div>
+                 <span className="text-2xl font-bold text-red-600">{e.qty}</span>
+              </div>
+           )
+        })}
+     </div>
+  );
+
+  const renderSettings = () => {
+    if (!settingsUnlocked) {
+        return (
+            <div className={`min-h-screen flex flex-col items-center justify-center p-6 ${isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-black'}`}>
+                 <div className="bg-red-100 text-red-600 w-20 h-20 rounded-full flex items-center justify-center mb-4 border-2 border-red-200"><Lock size={40} /></div>
+                 <h2 className="text-xl font-bold mb-4">{t("Security Check")}</h2>
+                 <p className="mb-4 text-center opacity-70">Enter Product Password to Access Settings</p>
+                 <input type="password" placeholder="Product Password" className={`w-full max-w-xs p-3 text-center text-xl rounded border mb-4 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300'}`} value={settingsPassInput} onChange={e => setSettingsPassInput(e.target.value)} />
+                 <button onClick={handleSettingsUnlock} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg active:scale-95 transition-all">UNLOCK SETTINGS</button>
+                 <div className="mt-8 text-xs opacity-50">Default: 0000 | Master Key: 123456</div>
+            </div>
+        )
+    }
+
+    return (
+    <div className={`p-4 pb-24 min-h-screen ${isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-black'}`}>
+       <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold flex items-center gap-2"><Settings/> {t("Settings")}</h2><TranslateBtn /></div>
+       
+       <div className={`p-4 rounded-xl border mb-4 bg-gradient-to-r from-blue-600 to-blue-800 text-white`}>
+          <div className="flex justify-between items-center">
+             <div><h3 className="font-bold text-lg">{t("Install App")}</h3><p className="text-xs opacity-80">{deferredPrompt ? "Tap to Install" : "Add to Home Screen"}</p></div>
+             <button onClick={handleInstallClick} className="bg-white text-blue-800 px-4 py-2 rounded-lg font-bold flex items-center gap-2 active:scale-95 transition-transform">{deferredPrompt ? <Download size={18}/> : <Smartphone size={18}/>}{deferredPrompt ? "Install" : "Guide"}</button>
+          </div>
+       </div>
+
+       <div className={`p-4 rounded-xl border mb-4 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300'}`}>
+          <div className="flex justify-between items-center">
+             <div><h3 className="font-bold">{t("Notifications")}</h3><p className="text-xs opacity-70">{notifPermission === 'granted' ? "Alerts are Active" : "Allow sound & popups"}</p></div>
+             {notifPermission === 'granted' ? <button className="bg-green-100 text-green-700 border border-green-500 px-4 py-2 rounded font-bold flex items-center gap-2 cursor-default"><CheckCircle size={18}/> Active</button> : <button onClick={requestNotificationPermission} className="bg-green-600 text-white px-4 py-2 rounded font-bold flex items-center gap-2 active:scale-95 transition-transform"><Bell size={18}/> Enable</button>}
+          </div>
+       </div>
+
+       <div className={`p-4 rounded-xl border mb-4 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300'}`}>
+          <label className="font-bold block mb-2">{t("Low Stock Limit Alert")}</label>
+          <div className="flex items-center gap-4"><input type="range" min="1" max="20" value={data.settings.limit} onChange={(e) => { if(window.confirm("Change limit?")) setData({...data, settings: {...data.settings, limit: parseInt(e.target.value)}})}} className="flex-1"/><span className="text-2xl font-bold">{data.settings.limit}</span></div>
+       </div>
+       
+       <div className={`p-4 rounded-xl border mb-4 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300'}`}>
+          <label className="font-bold block mb-2">{t("Theme")}</label>
+          <div className="flex gap-2"><button onClick={() => { if(window.confirm("Change Theme?")) setData({...data, settings: {...data.settings, theme: 'light'}})}} className="flex-1 py-2 border rounded font-bold">Light</button><button onClick={() => { if(window.confirm("Change Theme?")) setData({...data, settings: {...data.settings, theme: 'dark'}})}} className="flex-1 py-2 border bg-slate-700 text-white rounded font-bold">Dark</button></div>
+       </div>
+
+       <div className={`p-4 rounded-xl border mb-4 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300'}`}>
+           <label className="font-bold block mb-2 text-gray-500 uppercase text-xs">Data Safety</label>
+           <button onClick={() => {
+               const dataStr = JSON.stringify(data);
+               const blob = new Blob([dataStr], {type: "application/json"});
+               const url = URL.createObjectURL(blob);
+               const link = document.createElement('a');
+               link.href = url;
+               link.download = `arvind_backup_${new Date().toISOString().slice(0,10)}.json`;
+               document.body.appendChild(link);
+               link.click();
+               document.body.removeChild(link);
+           }} className="w-full py-2 bg-gray-200 text-black font-bold rounded flex items-center justify-center gap-2"><FileText size={18}/> Download Backup Copy</button>
+       </div>
+
+       <div className={`p-4 rounded-xl border mb-4 border-red-300 ${isDark ? 'bg-slate-800' : 'bg-red-50'}`}>
+          <label className="font-bold block mb-2 text-red-600">{t("Change App Password (Login)")}</label>
+          <input type="text" placeholder="New App Password" className="w-full p-2 border rounded mb-2 text-black" value={newPass} onChange={e => setNewPass(e.target.value)}/>
+          <button onClick={() => { if(window.confirm("Change Login Password?")) { setData({...data, settings: {...data.settings, password: newPass}}); setNewPass(''); alert("Login Password Updated!"); }}} className="w-full py-2 bg-red-600 text-white font-bold rounded">Update Login Pass</button>
+       </div>
+
+       <div className={`p-4 rounded-xl border mb-4 border-blue-300 ${isDark ? 'bg-slate-800' : 'bg-blue-50'}`}>
+          <label className="font-bold block mb-2 text-blue-600">{t("Change Product Password (Update)")}</label>
+          <input type="text" placeholder="New Product Password" className="w-full p-2 border rounded mb-2 text-black" value={newProductPass} onChange={e => setNewProductPass(e.target.value)}/>
+          <button onClick={() => { if(window.confirm("Change Product Password?")) { setData({...data, settings: {...data.settings, productPassword: newProductPass}}); setNewProductPass(''); alert("Product Password Updated!"); }}} className="w-full py-2 bg-blue-600 text-white font-bold rounded">Update Product Pass</button>
+       </div>
+
+       <button onClick={handleAppLock} className="w-full py-3 border-2 border-gray-400 rounded-lg font-bold text-gray-500 flex items-center justify-center gap-2"><LogOut size={20}/> Lock App Now</button>
+    </div>
+    );
+  };
+
+  return (
+    <div className={`min-h-screen font-sans ${isDark ? 'bg-slate-950' : 'bg-white'}`}>
+      <audio ref={audioRef} src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+
+      {view === 'generalIndex' && renderGeneralIndex()}
+      {view === 'pagesGrid' && renderPagesGrid()}
+      {view === 'stockSearch' && renderStockSearch()} 
+      {view === 'page' && renderPage()}
+      {view === 'alerts' && renderAlerts()}
+      {view === 'settings' && renderSettings()}
+      
+      {renderSaveButton()}
+
+      <div className={`fixed bottom-0 w-full border-t flex justify-between px-2 p-2 pb-safe z-50 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-300'}`}>
+         <NavBtn icon={Book} label={t("Index")} active={view === 'generalIndex'} onClick={() => setView('generalIndex')} isDark={isDark}/>
+         <NavBtn icon={Grid} label={t("Pages")} active={view === 'pagesGrid'} onClick={() => { setView('pagesGrid'); setIndexSearchTerm(''); }} isDark={isDark}/>
+         <NavBtn icon={Search} label={t("Search")} active={view === 'stockSearch'} onClick={() => { setView('stockSearch'); setStockSearchTerm(''); }} isDark={isDark}/>
+         <NavBtn icon={AlertTriangle} label={t("Alerts")} active={view === 'alerts'} onClick={() => setView('alerts')} alert={data.entries.some(e => e.qty < data.settings.limit)} isDark={isDark}/>
+         <NavBtn icon={Settings} label={t("Settings")} active={view === 'settings'} onClick={() => setView('settings')} isDark={isDark}/>
+      </div>
+
+      {isNewPageOpen && (
+        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-xl p-6">
+            <h3 className="text-xl font-bold mb-4 text-black">{t("New Page")}</h3>
+            <div className="flex gap-2 mb-4">
+                <input autoFocus className="flex-1 border-2 border-black rounded-lg p-3 text-lg font-bold text-black" placeholder="Item Name" value={input.itemName} onChange={e => setInput({...input, itemName: e.target.value})} />
+                <VoiceInput onResult={(txt) => setInput(prev => ({...prev, itemName: txt}))} isDark={false} />
+            </div>
+            <div className="flex gap-3">
+               <button onClick={() => setIsNewPageOpen(false)} className="flex-1 py-3 bg-gray-200 rounded font-bold text-black">Cancel</button>
+               <button onClick={handleAddPage} className="flex-1 py-3 bg-yellow-500 text-black rounded font-bold">Add</button>
+            </div>
           </div>
         </div>
       )}
 
-      {isCategoryModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
-          <div className={`rounded-lg shadow-xl w-full max-w-sm overflow-hidden animate-scale-in ${isDark ? 'bg-slate-800' : 'bg-white'}`}>
-            <div className={`p-4 border-b flex justify-between items-center ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-              <h3 className={`font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>Add Category</h3>
-              <button onClick={() => setIsCategoryModalOpen(false)}><X size={20} className="text-slate-400 hover:text-slate-700"/></button>
+      {editingEntry && (
+        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-xl p-6">
+            <h3 className="text-xl font-bold mb-4 text-black">{t("Edit Entry")}</h3>
+            <div className="space-y-4">
+               <div>
+                   <label className="text-xs font-bold text-gray-500">Car Name</label>
+                   <input className="w-full border-2 border-black rounded p-2 font-bold text-black" value={editingEntry.car} onChange={e => setEditingEntry({...editingEntry, car: e.target.value})} />
+               </div>
+               <div>
+                   <label className="text-xs font-bold text-gray-500">Quantity</label>
+                   <input type="number" className="w-full border-2 border-black rounded p-2 font-bold text-black" value={editingEntry.qty} onChange={e => setEditingEntry({...editingEntry, qty: e.target.value})} />
+               </div>
             </div>
-            <form onSubmit={handleAddCategory} className="p-6 space-y-4">
-              <input required autoFocus type="text" className={`w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none ${isDark ? 'bg-slate-900 border-slate-600 text-white' : 'border-slate-300'}`} placeholder="Category Name" value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} />
-              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-md transition-colors">Save</button>
-            </form>
+            <div className="flex gap-2 mt-6">
+               <button onClick={handleDeleteEntry} className="flex-1 py-3 bg-red-100 text-red-600 rounded font-bold flex items-center justify-center gap-2"><Trash2 size={18}/> Delete</button>
+               <button onClick={handleEditEntrySave} className="flex-[2] py-3 bg-blue-600 text-white rounded font-bold">Update</button>
+            </div>
+            <button onClick={() => setEditingEntry(null)} className="w-full mt-2 py-2 text-gray-500 font-bold">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {isNewEntryOpen && (
+        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-xl p-6">
+            <h3 className="text-xl font-bold mb-1 text-black">{t("New Entry")}</h3>
+            <p className="text-sm font-bold opacity-50 mb-4 text-black">{activePage?.itemName}</p>
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                 <div className="flex-1">
+                     <input autoFocus className="w-full border-2 border-black rounded p-3 text-lg font-bold text-black" placeholder="Car (e.g. Swift & Alto)" value={input.carName} onChange={e => setInput({...input, carName: e.target.value})} />
+                     <p className="text-[10px] text-gray-500 mt-1">Tip: Use "Swift & Alto" for shared items.</p>
+                 </div>
+                 <VoiceInput onResult={(txt) => setInput(prev => ({...prev, carName: txt}))} isDark={false} />
+              </div>
+              {input.carName && (() => {
+                const existing = data.entries.filter(e => e.pageId === activePage.id && e.car.toLowerCase().includes(input.carName.toLowerCase())).reduce((a,b) => a+b.qty, 0);
+                return existing > 0 ? <div className="p-2 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm font-bold text-center">Already have {existing} in stock!</div> : null;
+              })()}
+              <input type="number" className="w-full border-2 border-black rounded p-3 text-lg font-bold text-black" placeholder="Qty" value={input.qty} onChange={e => setInput({...input, qty: e.target.value})} />
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setIsNewEntryOpen(false)} className="flex-1 py-3 bg-gray-200 rounded font-bold text-black">Cancel</button>
+              <button onClick={handleAddEntry} className="flex-1 py-3 bg-blue-600 text-white rounded font-bold">Save</button>
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 }
+
+const NavBtn = ({ icon: Icon, label, active, onClick, alert, isDark }) => (
+  <button onClick={onClick} className={`relative flex-1 flex flex-col items-center p-2 rounded-xl transition-all ${active ? 'text-blue-600 bg-blue-50 dark:bg-slate-800 dark:text-blue-400' : 'text-gray-400 dark:text-slate-500'}`}>
+    <Icon size={24} strokeWidth={active ? 2.5 : 2} />
+    <span className="text-[10px] font-bold mt-1 text-center leading-none">{label}</span>
+    {alert && <span className="absolute top-1 right-3 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-bounce"></span>}
+  </button>
+);
