@@ -3,13 +3,16 @@ import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  define: {
+    global: 'window',
+  },
   plugins: [react()],
   resolve: {
     alias: {
       'react-native': 'react-native-web',
     },
+    extensions: ['.web.js', '.js', '.ts', '.tsx', '.jsx'],
   },
-  // 1. Fix for Development Server
   optimizeDeps: {
     esbuildOptions: {
       loader: {
@@ -17,13 +20,11 @@ export default defineConfig({
       },
     },
   },
-  // 2. Fix for Production Build (VERCEL FIX)
+  // FINAL FIX: Use 'tsx' loader instead of 'jsx'
   esbuild: {
-    loader: "jsx",
-    // This Regex tells Vite: "Check ALL files (.js, .jsx, etc) for JSX code"
-    // even if they are in node_modules
-    include: /.*\.(js|jsx|ts|tsx)$/, 
-    exclude: [], 
+    loader: "tsx", // Ye '!' operator aur HTML dono ko samajhta hai
+    include: /./,
+    exclude: [],
   },
   build: {
     commonjsOptions: {
