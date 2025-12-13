@@ -1,20 +1,18 @@
-import { defineConfig } from 'vite'
+Set-Content vite.config.ts "import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vitejs.dev/config/
+// FINAL VERCEL FIX 2.0
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
       'react-native': 'react-native-web',
     },
+    extensions: ['.web.js', '.js', '.ts', '.tsx']
   },
   build: {
     commonjsOptions: {
       transformMixedEsModules: true,
     },
   },
-})
-// Last line mein ye likh do
-// Force update check
-// Vercel Fix Update 01
+})"
