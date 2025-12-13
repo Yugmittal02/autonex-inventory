@@ -8,6 +8,16 @@ export default defineConfig({
     alias: {
       'react-native': 'react-native-web',
     },
+    // Ye ensure karega ki web extensions pehle pick hon
+    extensions: ['.web.js', '.js', '.web.ts', '.ts', '.web.tsx', '.tsx', '.jsx'],
+  },
+  // YE WALA PART ERROR FIX KAREGA
+  optimizeDeps: {
+    esbuildOptions: {
+      loader: {
+        '.js': 'jsx', // .js files ko JSX ki tarah padho
+      },
+    },
   },
   build: {
     commonjsOptions: {
