@@ -1,7 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vitejs.dev/config/
+const extensions = [
+  '.web.tsx', 
+  '.tsx', 
+  '.web.ts', 
+  '.ts', 
+  '.web.jsx', 
+  '.jsx', 
+  '.web.js', 
+  '.js', 
+  '.css', 
+  '.json',
+]
+
 export default defineConfig({
   define: {
     global: 'window',
@@ -11,25 +23,24 @@ export default defineConfig({
     alias: {
       'react-native': 'react-native-web',
     },
-    extensions: ['.web.js', '.js', '.ts', '.tsx', '.jsx'],
+    extensions,
   },
   optimizeDeps: {
     esbuildOptions: {
-      loader: {
-        '.js': 'jsx',
-      },
+      loader: { '.js': 'jsx' },
     },
   },
-  // SMART FIX: Sirf .js files ko JSX maano. 
-  // .tsx aur .ts files ko Normal rehne do.
+  // NEW STRATEGY: 
+  // Hum keh rahe hain: "Sab kuch (JS/TS/JSX/TSX) ko 'tsx' ki tarah padho"
+  // 'tsx' loader sabse powerful hai, wo Icons aur Code dono ko sambhal lega.
   esbuild: {
-    loader: "jsx",
-    include: /src\/.*\.jsx?$|node_modules\/.*\.js$/, 
+    loader: "tsx", 
+    include: /src\/.*\.[tj]sx?$|node_modules\/.*\.[tj]sx?$/,
     exclude: [],
   },
   build: {
     commonjsOptions: {
-      transformMixedEsModules: true,
+      transformMixedEsModules: true, 
     },
   },
 })
