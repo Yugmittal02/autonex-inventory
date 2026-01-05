@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Plus, Calendar, Trash2, ChevronRight, Type, PenTool, Highlighter, Circle as CircleIcon, Minus, Eraser } from 'lucide-react';
 import VoiceInput from '../components/VoiceInput';
-import { convertToHindi } from '../utils/translator';
+import { convertToHindi } from '../utils/translator.ts';
 
 const Notepad = ({ cardClass, isDark }) => {
   const [notesView, setNotesView] = useState('list');

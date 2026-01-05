@@ -1,7 +1,13 @@
 import React, { useEffect } from 'react';
-import { X, XCircle, CheckCircle } from 'lucide-react';
+import { X, CheckCircle, XCircle } from 'lucide-react';
 
-const ToastMessage = ({ message, type, onClose }) => {
+type ToastMessageProps = {
+  message: string;
+  type: 'success' | 'error';
+  onClose: () => void;
+};
+
+export const ToastMessage: React.FC<ToastMessageProps> = ({ message, type, onClose }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 3000);
     return () => clearTimeout(timer);
@@ -17,7 +23,11 @@ const ToastMessage = ({ message, type, onClose }) => {
       style={{ animation: 'slideDown 0.3s ease-out' }}
     >
       <div className={`p-1.5 rounded-full ${type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>
-        {type === 'error' ? <XCircle size={18} className="shrink-0" /> : <CheckCircle size={18} className="shrink-0" />}
+        {type === 'error' ? (
+          <XCircle size={18} className="shrink-0" />
+        ) : (
+          <CheckCircle size={18} className="shrink-0" />
+        )}
       </div>
       <span className="font-semibold text-sm md:text-base">{message}</span>
       <button onClick={onClose} className="ml-2 p-1 hover:bg-white/20 rounded-full transition-colors">
@@ -26,4 +36,5 @@ const ToastMessage = ({ message, type, onClose }) => {
     </div>
   );
 };
+
 export default ToastMessage;

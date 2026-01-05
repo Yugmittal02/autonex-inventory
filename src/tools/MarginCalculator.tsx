@@ -33,7 +33,7 @@ const MarginCalculator = ({ cardClass, commonInputClass }) => {
         ) : (
            <>
                <input type="number" placeholder="Original Price (₹)" className={commonInputClass} value={marginInput.cost} onChange={e => setMarginInput({...marginInput, cost: e.target.value})} />
-               <input type="number" placeholder="Discount %" className={commonInputClass} value={marginInput.discount} onChange={e => setMarginInput({...marginInput, discount: e.target.value})} />
+               <input type="number" placeholder="Discount %" className={commonInputClass} value={marginInput.discount} onChange={e => setMarginInput({...marginInput, discount: Number(e.target.value)})} />
                <div className="bg-purple-50 p-4 rounded-xl text-purple-900 border border-purple-100">
                   <div className="flex justify-between mb-1"><span>You Save</span> <span>₹{((parseFloat(marginInput.cost) * marginInput.discount) / 100 || 0).toFixed(2)}</span></div>
                   <div className="flex justify-between text-xl font-bold border-t border-purple-200 pt-2 mt-2"><span>Payable</span> <span>₹{(parseFloat(marginInput.cost) - ((parseFloat(marginInput.cost) * marginInput.discount) / 100) || 0).toFixed(2)}</span></div>

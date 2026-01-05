@@ -54,7 +54,7 @@ const BillsPage = ({ data, isDark, t, pushToFirebase, user, showToast }) => {
          
          <div className="grid grid-cols-2 gap-4">
              {(!data.bills || data.bills.length === 0) && <p className="col-span-2 text-center opacity-50 italic">No bills uploaded yet.</p>}
-             {(data.bills || []).sort((a,b) => new Date(b.date) - new Date(a.date)).map(bill => (
+             {(data.bills || []).sort((a,b) => +new Date(b.date) - +new Date(a.date)).map(bill => (
                  <div key={bill.id} onClick={() => setViewImage(bill.image ? bill.image : bill)} className={`rounded-xl overflow-hidden border shadow-sm relative group cursor-pointer ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
                      <img src={bill.image ? bill.image : bill} alt="Bill" className="w-full h-40 object-cover" />
                      <div className="p-2"><p className="text-[10px] opacity-70">{new Date(bill.date || Date.now()).toLocaleDateString()}</p></div>

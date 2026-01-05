@@ -1,7 +1,7 @@
 import React from 'react';
 import { Minus, Plus, Edit } from 'lucide-react';
 
-const EntryRow = React.memo(({ entry, t, isDark, onUpdateBuffer, onEdit, limit, tempQty, index }) => {
+const EntryRow = React.memo(({ entry, t, isDark, onUpdateBuffer, onEdit, limit, tempQty, index }: any) => {
     const displayQty = tempQty !== undefined ? tempQty : entry.qty;
     const isChanged = tempQty !== undefined;
     

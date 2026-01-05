@@ -1,7 +1,7 @@
 import React from 'react';
 import { Book, Grid, Search, AlertTriangle, Camera, Settings } from 'lucide-react';
 
-const NavBtn = ({ icon: Icon, label, active, onClick, alert, isDark }) => (
+const NavBtn = ({ icon: Icon, label, active, onClick, alert = false }: any) => (
   <button onClick={onClick} className={`relative flex-1 flex flex-col items-center p-2 rounded-xl transition-all ${active ? 'text-blue-600 bg-blue-50 dark:bg-slate-800 dark:text-blue-400' : 'text-gray-400 dark:text-slate-500'}`}>
     <Icon size={24} strokeWidth={active ? 2.5 : 2} />
     <span className="text-[10px] font-bold mt-1 text-center leading-none">{label}</span>
@@ -9,7 +9,7 @@ const NavBtn = ({ icon: Icon, label, active, onClick, alert, isDark }) => (
   </button>
 );
 
-const Navbar = ({ view, setView, hasAlert, isDark, t, resetStates }) => {
+const Navbar = ({ view, setView, hasAlert, isDark, t, resetStates }: any) => {
   const handleNav = (newView) => {
     setView(newView);
     if(resetStates) resetStates();
