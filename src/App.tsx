@@ -145,6 +145,7 @@ function DukanRegister() {
   const [view, setView] = useState('generalIndex'); 
   const [activePageId, setActivePageId] = useState(null);
   const [activeToolId, setActiveToolId] = useState(null);
+  const [toolsReturnView, setToolsReturnView] = useState('generalIndex');
   
   // ?? GHOST MIC STATE
   const [isGhostMicOpen, setIsGhostMicOpen] = useState(false);
@@ -190,6 +191,17 @@ function DukanRegister() {
   const [tempChanges, setTempChanges] = useState({}); 
 
   const [displayLimit, setDisplayLimit] = useState(50);
+
+  const openTools = (toolId: string | null, returnTo?: string) => {
+    setToolsReturnView(returnTo ?? view);
+    setActiveToolId(toolId);
+    setView('tools');
+  };
+
+  const closeTools = () => {
+    setView(toolsReturnView || 'generalIndex');
+    setActiveToolId(null);
+  };
 
   const [settingsUnlocked, setSettingsUnlocked] = useState(false);
   const [settingsPassInput, setSettingsPassInput] = useState('');
@@ -1314,7 +1326,7 @@ function DukanRegister() {
              {id: 'translator', icon: <Languages size={18}/>, label: 'Trans', col: 'text-pink-600 bg-pink-100'},
              {id: 'invoice', icon: <FileText size={18}/>, label: 'Bill', col: 'text-indigo-600 bg-indigo-100'},
            ].filter(t => data.settings.pinnedTools.includes(t.id)).map(tool => (
-             <button key={tool.id} onClick={() => { setActiveToolId(tool.id); setView('tools'); }} className={`inline-flex items-center gap-2 px-3 py-2 rounded-full font-bold text-sm shadow-sm border ${tool.col} border-transparent hover:scale-105 transition-transform`}>
+             <button key={tool.id} onClick={() => openTools(tool.id, view)} className={`inline-flex items-center gap-2 px-3 py-2 rounded-full font-bold text-sm shadow-sm border ${tool.col} border-transparent hover:scale-105 transition-transform`}>
                {tool.icon} {tool.label}
              </button>
            ))}
@@ -1442,6 +1454,7 @@ function DukanRegister() {
       isDark={isDark}
       isHindi={isHindi}
       t={t}
+      translateButton={<TranslateBtn />}
       data={data}
       filteredStock={filteredStock}
       displayLimit={displayLimit}
@@ -1450,7 +1463,6 @@ function DukanRegister() {
       setStockSearchTerm={setStockSearchTerm}
       isSafeMode={isSafeMode}
       setIsSafeMode={setIsSafeMode}
-      setActiveToolId={setActiveToolId}
       setView={setView}
       setActivePageId={setActivePageId}
       setPageSearchTerm={setPageSearchTerm}
@@ -1725,7 +1737,7 @@ function DukanRegister() {
            </div>
 
            {/* Business Tools */}
-           <button onClick={() => setView('tools')} className={`w-full p-4 rounded-2xl flex items-center justify-between gap-2 shadow-sm border ${isDark ? 'bg-gradient-to-r from-slate-800 to-blue-900/30 border-blue-500/30' : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'}`}>
+           <button onClick={() => openTools(null, view)} className={`w-full p-4 rounded-2xl flex items-center justify-between gap-2 shadow-sm border ${isDark ? 'bg-gradient-to-r from-slate-800 to-blue-900/30 border-blue-500/30' : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'}`}>
             <div className="flex items-center gap-3">
               <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow"><Briefcase size={20} className="text-white" /></div>
               <div className="text-left">
@@ -2345,7 +2357,7 @@ function DukanRegister() {
       
       {/* Bills view removed */}
 
-      {view === 'tools' && <ToolsHubView onBack={() => setView('settings')} t={t} isDark={isDark} initialTool={activeToolId} pinnedTools={data.settings.pinnedTools || []} onTogglePin={handleTogglePin} shopDetails={data.settings}/>}
+      {view === 'tools' && <ToolsHubView onBack={closeTools} t={t} isDark={isDark} initialTool={activeToolId} pinnedTools={data.settings.pinnedTools || []} onTogglePin={handleTogglePin} shopDetails={data.settings}/>}
       
       {renderSaveButton()}
 

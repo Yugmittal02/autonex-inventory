@@ -2,7 +2,6 @@ import React from 'react';
 import {
   Book,
   ChevronRight,
-  Languages,
   Minus,
   Plus,
   Search,
@@ -16,6 +15,8 @@ type Props = {
   isHindi: boolean;
   t: (text: any) => string;
 
+  translateButton?: React.ReactNode;
+
   data: any;
   filteredStock: any[];
   displayLimit: number;
@@ -27,7 +28,6 @@ type Props = {
   isSafeMode: boolean;
   setIsSafeMode: (val: boolean) => void;
 
-  setActiveToolId: (id: string) => void;
   setView: (view: any) => void;
 
   setActivePageId: (id: any) => void;
@@ -44,6 +44,7 @@ export default function StockSearchView(props: Props) {
     isDark,
     isHindi,
     t,
+    translateButton,
     data,
     filteredStock,
     displayLimit,
@@ -52,7 +53,6 @@ export default function StockSearchView(props: Props) {
     setStockSearchTerm,
     isSafeMode,
     setIsSafeMode,
-    setActiveToolId,
     setView,
     setActivePageId,
     setPageSearchTerm,
@@ -82,6 +82,8 @@ export default function StockSearchView(props: Props) {
             >
               {isSafeMode ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}
             </button>
+
+            {translateButton}
           </div>
         </div>
 
@@ -111,25 +113,6 @@ export default function StockSearchView(props: Props) {
           <VoiceInput onResult={setStockSearchTerm} isDark={isDark} lang={isHindi ? 'hi-IN' : 'en-IN'} />
         </div>
 
-        {/* Quick actions */}
-        <div className="mt-3">
-          <button
-            onClick={() => {
-              setActiveToolId('translator');
-              setView('tools');
-            }}
-            className={`w-full p-3 rounded-xl border shadow-sm flex items-center justify-between font-bold ${
-              isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'
-            }`}
-            type="button"
-          >
-            <span className="inline-flex items-center gap-2">
-              <Languages size={18} className="text-pink-600" />
-              {t('Translator')}
-            </span>
-            <ChevronRight size={18} className={isDark ? 'text-slate-400' : 'text-gray-400'} />
-          </button>
-        </div>
       </div>
 
       <div className="space-y-3">
