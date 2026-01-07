@@ -130,6 +130,8 @@ const ToolsHub = ({
   const [calcStored, setCalcStored] = useState<number | null>(null);
   const [calcOp, setCalcOp] = useState<'+' | '-' | '*' | '/' | null>(null);
   const [calcWaiting, setCalcWaiting] = useState(false);
+  const [calcExpr, setCalcExpr] = useState('');
+  const [calcLastLine, setCalcLastLine] = useState('');
 
   useEffect(() => {
     localStorage.setItem('proNotes', JSON.stringify(notes));
@@ -278,10 +280,12 @@ const ToolsHub = ({
     setCalcDisplay((prev) => {
       if (prev === 'Error') {
         setCalcWaiting(false);
+        setCalcLastLine('');
         return digit;
       }
       if (calcWaiting) {
         setCalcWaiting(false);
+        setCalcLastLine('');
         return digit;
       }
       if (prev === '0') return digit;
@@ -295,6 +299,7 @@ const ToolsHub = ({
     setCalcDisplay((prev) => {
       if (calcWaiting) {
         setCalcWaiting(false);
+        setCalcLastLine('');
         return '0.';
       }
       if (prev.includes('.')) return prev;
@@ -307,6 +312,8 @@ const ToolsHub = ({
     setCalcStored(null);
     setCalcOp(null);
     setCalcWaiting(false);
+    setCalcExpr('');
+    setCalcLastLine('');
   };
 
   const calcBackspace = () => {
@@ -354,6 +361,20 @@ const ToolsHub = ({
     return s;
   };
 
+  const calcOpSymbol = (op: NonNullable<typeof calcOp>) => {
+    switch (op) {
+      case '*':
+        return '×';
+      case '/':
+        return '÷';
+      case '-':
+        return '−';
+      case '+':
+      default:
+        return op;
+    }
+  };
+
   const calcCompute = (a: number, b: number, op: NonNullable<typeof calcOp>) => {
     switch (op) {
       case '+':
@@ -371,16 +392,23 @@ const ToolsHub = ({
     const inputValue = parseFloat(calcDisplay);
     if (Number.isNaN(inputValue)) return;
 
+    let nextStored = calcStored;
+
     // If user taps another operator while waiting for next number, just change operator.
     if (calcWaiting && calcStored !== null) {
       setCalcOp(op);
+      setCalcExpr(`${formatCalcNumber(calcStored)} ${calcOpSymbol(op)}`);
+      setCalcLastLine('');
       return;
     }
 
     if (calcStored === null) {
+      nextStored = inputValue;
       setCalcStored(inputValue);
       setCalcOp(op);
       setCalcWaiting(true);
+      setCalcExpr(`${formatCalcNumber(inputValue)} ${calcOpSymbol(op)}`);
+      setCalcLastLine('');
       return;
     }
 
@@ -389,11 +417,14 @@ const ToolsHub = ({
       const next = Number.isFinite(result) ? result : NaN;
       const formatted = formatCalcNumber(next);
       setCalcDisplay(formatted);
-      setCalcStored(formatted === 'Error' ? null : (parseFloat(formatted) as any));
+      nextStored = formatted === 'Error' ? null : (parseFloat(formatted) as any);
+      setCalcStored(nextStored);
     }
 
     setCalcOp(op);
     setCalcWaiting(true);
+    setCalcExpr(nextStored !== null ? `${formatCalcNumber(nextStored)} ${calcOpSymbol(op)}` : '');
+    setCalcLastLine('');
   };
 
   const calcEquals = () => {
@@ -402,9 +433,11 @@ const ToolsHub = ({
     const result = calcCompute(calcStored, inputValue, calcOp);
     const formatted = formatCalcNumber(Number.isFinite(result) ? result : NaN);
     setCalcDisplay(formatted);
+    setCalcLastLine(`${formatCalcNumber(calcStored)} ${calcOpSymbol(calcOp)} ${formatCalcNumber(inputValue)} = ${formatted}`);
     setCalcStored(null);
     setCalcOp(null);
     setCalcWaiting(true);
+    setCalcExpr('');
   };
 
   const deleteInvItem = (id: number) => setInvItems(invItems.filter(i => i.id !== id));
@@ -1771,8 +1804,14 @@ const ToolsHub = ({
             </div>
 
             <div className={`w-full rounded-2xl p-4 mb-4 border-2 ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
+              <div className={`text-right text-xs font-bold tracking-wide mb-2 ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+                {calcExpr || (calcStored !== null && calcOp ? `${formatCalcNumber(calcStored)} ${calcOpSymbol(calcOp)}` : '\u00A0')}
+              </div>
               <div className={`text-right font-black text-4xl leading-none break-words ${isDark ? 'text-white' : 'text-gray-900'}`}>
                 {calcDisplay}
+              </div>
+              <div className={`text-right text-xs mt-2 truncate ${isDark ? 'text-slate-500' : 'text-gray-500'}`}>
+                {calcLastLine || '\u00A0'}
               </div>
             </div>
 

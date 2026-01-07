@@ -194,7 +194,11 @@ function DukanRegister() {
   const [displayLimit, setDisplayLimit] = useState(50);
 
   const openTools = (toolId: string | null, returnTo?: string) => {
-    setToolsReturnView(returnTo ?? view);
+    // If already inside tools, don't overwrite the original return view.
+    setToolsReturnView(prev => {
+      const target = returnTo ?? (view === 'tools' ? prev : view);
+      return target || 'generalIndex';
+    });
     setActiveToolId(toolId);
     setView('tools');
   };
@@ -232,6 +236,8 @@ function DukanRegister() {
   // Draggable floating "+" (Index + Pages)
   const [fabPosIndex, setFabPosIndex] = useState<any>(null);
   const [fabPosPages, setFabPosPages] = useState<any>(null);
+  const [fabPosPageAdd, setFabPosPageAdd] = useState<any>(null);
+  const [fabPosSave, setFabPosSave] = useState<any>(null);
   const fabDragRef = useRef<any>(null);
   
   const [input, setInput] = useState({ itemName: '', carName: '', qty: '' });
@@ -994,21 +1000,25 @@ function DukanRegister() {
     showToast(t('Page order updated'));
   };
 
-  const clampFabPos = (pos: { x: number; y: number }, size: number) => {
+  const clampFabPosWH = (pos: { x: number; y: number }, width: number, height: number) => {
     const margin = 12;
     const w = typeof window !== 'undefined' ? window.innerWidth : 360;
     const h = typeof window !== 'undefined' ? window.innerHeight : 640;
     return {
-      x: Math.max(margin, Math.min(w - size - margin, pos.x)),
-      y: Math.max(margin, Math.min(h - size - margin, pos.y)),
+      x: Math.max(margin, Math.min(w - width - margin, pos.x)),
+      y: Math.max(margin, Math.min(h - height - margin, pos.y)),
     };
   };
 
-  const getDefaultFabPos = (size: number) => {
+  const clampFabPos = (pos: { x: number; y: number }, size: number) => clampFabPosWH(pos, size, size);
+
+  const getDefaultFabPosWH = (width: number, height: number) => {
     const w = typeof window !== 'undefined' ? window.innerWidth : 360;
     const h = typeof window !== 'undefined' ? window.innerHeight : 640;
-    return { x: w - size - 24, y: h - size - 96 };
+    return { x: w - width - 24, y: h - height - 96 };
   };
+
+  const getDefaultFabPos = (size: number) => getDefaultFabPosWH(size, size);
 
   const loadFabPos = (key: string) => {
     try {
@@ -1042,20 +1052,32 @@ function DukanRegister() {
       const next = clampFabPos(saved || getDefaultFabPos(size), size);
       setFabPosPages(next);
     }
-  }, [view, fabPosIndex, fabPosPages]);
+    if (view === 'page' && !fabPosPageAdd) {
+      const saved = loadFabPos('pageAdd');
+      const next = clampFabPos(saved || getDefaultFabPos(56), 56);
+      setFabPosPageAdd(next);
+    }
+    if (view === 'page' && !fabPosSave) {
+      const saved = loadFabPos('save');
+      const next = clampFabPosWH(saved || getDefaultFabPosWH(190, 56), 190, 56);
+      setFabPosSave(next);
+    }
+  }, [view, fabPosIndex, fabPosPages, fabPosPageAdd, fabPosSave]);
 
   const makeFabHandlers = (
-    key: 'index' | 'pages',
+    key: 'index' | 'pages' | 'pageAdd' | 'save',
     getPos: () => { x: number; y: number } | null,
     setPos: (p: any) => void,
     onTap: () => void,
-    size: number
+    width: number,
+    height?: number
   ) => {
+    const h = height ?? width;
     return {
       onPointerDown: (e: any) => {
         e.preventDefault();
         e.stopPropagation();
-        const pos = getPos() || getDefaultFabPos(size);
+        const pos = getPos() || getDefaultFabPosWH(width, h);
         fabDragRef.current = {
           key,
           pointerId: e.pointerId,
@@ -1072,7 +1094,7 @@ function DukanRegister() {
         const dx = e.clientX - st.startX;
         const dy = e.clientY - st.startY;
         if (!st.moved && Math.hypot(dx, dy) > 6) st.moved = true;
-        const next = clampFabPos({ x: st.startPos.x + dx, y: st.startPos.y + dy }, size);
+        const next = clampFabPosWH({ x: st.startPos.x + dx, y: st.startPos.y + dy }, width, h);
         setPos(next);
       },
       onPointerUp: (e: any) => {
@@ -1291,10 +1313,24 @@ function DukanRegister() {
       const count = Object.keys(tempChanges).length;
       if (count === 0) return null;
       return (
-          <button 
-            onClick={openSaveModal} 
-            className="fixed bottom-24 right-6 bg-gradient-to-r from-green-600 to-emerald-600 text-white px-5 py-3.5 rounded-2xl shadow-2xl shadow-green-500/40 flex items-center gap-3 z-50 cursor-pointer hover:from-green-500 hover:to-emerald-500 transition-all group"
-            style={{animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'}}
+          <button
+            type="button"
+            title="Hold and drag to move"
+            {...makeFabHandlers(
+              'save',
+              () => fabPosSave,
+              setFabPosSave,
+              openSaveModal,
+              190,
+              56
+            )}
+            className="fixed bg-gradient-to-r from-green-600 to-emerald-600 text-white px-5 py-3.5 rounded-2xl shadow-2xl shadow-green-500/40 flex items-center gap-3 z-50 cursor-pointer hover:from-green-500 hover:to-emerald-500 transition-all group"
+            style={{
+              left: (fabPosSave?.x ?? getDefaultFabPosWH(190, 56).x),
+              top: (fabPosSave?.y ?? getDefaultFabPosWH(190, 56).y),
+              touchAction: 'none',
+              animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            }}
           >
             <div className="bg-white/20 p-1.5 rounded-lg group-hover:bg-white/30 transition-colors">
               <SaveAll size={18} />
@@ -1315,7 +1351,7 @@ function DukanRegister() {
           <div className="relative">
             <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-20 animate-pulse"></div>
             <div className="relative bg-gradient-to-br from-blue-600 to-purple-600 p-6 rounded-3xl shadow-2xl">
-              <img src="/myicon.svg" alt="StoreLink" className="w-12 h-12" />
+              <img src="/myicon.svg" alt="StoreLink" className="w-14 h-14" />
             </div>
           </div>
 
@@ -1351,7 +1387,7 @@ function DukanRegister() {
            {/* Logo */}
            <div className="flex justify-center mb-6">
              <div className="bg-gradient-to-br from-blue-600 to-purple-600 p-4 rounded-2xl shadow-lg">
-               <img src="/myicon.svg" alt="StoreLink" className="w-8 h-8" />
+               <img src="/myicon.svg" alt="StoreLink" className="w-9 h-9" />
              </div>
            </div>
            <h1 className="text-2xl font-bold text-center mb-1">Welcome to StoreLink</h1>
@@ -1769,7 +1805,22 @@ function DukanRegister() {
             </button>
         )}
 
-        <button onClick={() => setIsNewEntryOpen(true)} className="fixed bottom-24 right-6 bg-blue-600 text-white w-14 h-14 rounded-full shadow-lg border-2 border-white flex items-center justify-center z-20"><Plus size={28}/></button>
+        <button
+          type="button"
+          aria-label="Add Item"
+          title="Hold and drag to move"
+          {...makeFabHandlers(
+            'pageAdd',
+            () => fabPosPageAdd,
+            setFabPosPageAdd,
+            () => setIsNewEntryOpen(true),
+            56
+          )}
+          style={{ position: 'fixed', left: (fabPosPageAdd?.x ?? getDefaultFabPos(56).x), top: (fabPosPageAdd?.y ?? getDefaultFabPos(56).y), touchAction: 'none' }}
+          className="bg-blue-600 text-white w-14 h-14 rounded-full shadow-lg border-2 border-white flex items-center justify-center z-20 active:scale-95"
+        >
+          <Plus size={28}/>
+        </button>
       </div>
     );
   };
