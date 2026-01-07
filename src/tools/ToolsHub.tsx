@@ -47,6 +47,7 @@ type ToolsHubProps = {
   pinnedTools: string[];
   onTogglePin: (toolId: string) => void;
   shopDetails: any;
+  pages: any[];
 };
 
 const ToolsHub = ({
@@ -57,6 +58,7 @@ const ToolsHub = ({
   pinnedTools,
   onTogglePin,
   shopDetails,
+  pages,
 }: ToolsHubProps) => {
   const [activeTool, setActiveTool] = useState(initialTool);
   const [invoiceNumber] = useState(() => Date.now().toString().slice(-4));
@@ -78,7 +80,6 @@ const ToolsHub = ({
     rate: 0,
     gst: 18,
     unit: 'pcs',
-    hsn: '',
   });
   const [invSettings, setInvSettings] = useState({
     showGst: true,
@@ -124,6 +125,12 @@ const ToolsHub = ({
   // ?? STOCK VALUE CALCULATOR
   const [stockCalc, setStockCalc] = useState<any>({ items: [], newItem: { name: '', qty: 0, rate: 0 } });
 
+  // PHONE-STYLE CALCULATOR
+  const [calcDisplay, setCalcDisplay] = useState('0');
+  const [calcStored, setCalcStored] = useState<number | null>(null);
+  const [calcOp, setCalcOp] = useState<'+' | '-' | '*' | '/' | null>(null);
+  const [calcWaiting, setCalcWaiting] = useState(false);
+
   useEffect(() => {
     localStorage.setItem('proNotes', JSON.stringify(notes));
   }, [notes]);
@@ -152,6 +159,13 @@ const ToolsHub = ({
       icon: <Calculator size={24} />,
       color: 'bg-purple-100 text-purple-600',
       desc: 'Margin & Markup',
+    },
+    {
+      id: 'calculator',
+      name: 'Calculator',
+      icon: <Calculator size={24} />,
+      color: 'bg-slate-100 text-slate-700',
+      desc: 'Basic Phone Calc',
     },
     {
       id: 'emi',
@@ -257,7 +271,94 @@ const ToolsHub = ({
       total: baseTotal + gstAmt,
     };
     setInvItems([...invItems, newItem]);
-    setInvCurrentItem({ name: '', qty: 1, rate: 0, gst: 18, unit: 'pcs', hsn: '' });
+    setInvCurrentItem({ name: '', qty: 1, rate: 0, gst: 18, unit: 'pcs' });
+  };
+
+  const calcInputDigit = (digit: string) => {
+    setCalcDisplay((prev) => {
+      if (calcWaiting) {
+        setCalcWaiting(false);
+        return digit;
+      }
+      if (prev === '0') return digit;
+      return prev + digit;
+    });
+  };
+
+  const calcInputDot = () => {
+    setCalcDisplay((prev) => {
+      if (calcWaiting) {
+        setCalcWaiting(false);
+        return '0.';
+      }
+      if (prev.includes('.')) return prev;
+      return prev + '.';
+    });
+  };
+
+  const calcClear = () => {
+    setCalcDisplay('0');
+    setCalcStored(null);
+    setCalcOp(null);
+    setCalcWaiting(false);
+  };
+
+  const calcToggleSign = () => {
+    setCalcDisplay((prev) => {
+      if (prev === '0') return prev;
+      return prev.startsWith('-') ? prev.slice(1) : `-${prev}`;
+    });
+  };
+
+  const calcPercent = () => {
+    const value = parseFloat(calcDisplay) || 0;
+    setCalcDisplay((value / 100).toString());
+  };
+
+  const calcCompute = (a: number, b: number, op: NonNullable<typeof calcOp>) => {
+    switch (op) {
+      case '+':
+        return a + b;
+      case '-':
+        return a - b;
+      case '*':
+        return a * b;
+      case '/':
+        return b === 0 ? NaN : a / b;
+    }
+  };
+
+  const calcSetOperator = (op: NonNullable<typeof calcOp>) => {
+    const inputValue = parseFloat(calcDisplay);
+    if (Number.isNaN(inputValue)) return;
+
+    if (calcStored === null) {
+      setCalcStored(inputValue);
+      setCalcOp(op);
+      setCalcWaiting(true);
+      return;
+    }
+
+    if (calcOp) {
+      const result = calcCompute(calcStored, inputValue, calcOp);
+      const safe = Number.isFinite(result) ? result : 0;
+      setCalcDisplay(safe.toString());
+      setCalcStored(safe);
+    }
+
+    setCalcOp(op);
+    setCalcWaiting(true);
+  };
+
+  const calcEquals = () => {
+    const inputValue = parseFloat(calcDisplay);
+    if (calcStored === null || !calcOp || Number.isNaN(inputValue)) return;
+    const result = calcCompute(calcStored, inputValue, calcOp);
+    const safe = Number.isFinite(result) ? result : 0;
+    setCalcDisplay(safe.toString());
+    setCalcStored(null);
+    setCalcOp(null);
+    setCalcWaiting(true);
   };
 
   const deleteInvItem = (id: number) => setInvItems(invItems.filter(i => i.id !== id));
@@ -620,9 +721,9 @@ const ToolsHub = ({
             {/* Invoice Type Selection */}
             <div className="flex gap-2 mb-4 bg-indigo-50 p-1.5 rounded-xl">
               {[
-                { id: 'retail', label: '?? Retail', desc: 'Simple Bill' },
-                { id: 'gst', label: '?? GST Invoice', desc: 'With Tax' },
-                { id: 'estimate', label: '?? Estimate', desc: 'Quotation' },
+                { id: 'retail', label: 'Retail', desc: 'Simple Bill' },
+                { id: 'gst', label: 'GST Invoice', desc: 'With Tax' },
+                { id: 'estimate', label: 'Estimate', desc: 'Quotation' },
               ].map(type => (
                 <button
                   key={type.id}
@@ -682,14 +783,13 @@ const ToolsHub = ({
                       <tr key={item.id} className={idx % 2 === 0 ? 'bg-gray-50' : ''}>
                         <td className="py-1.5 px-1">
                           <span className="font-medium">{item.name}</span>
-                          {item.hsn && <span className="block text-[7px] text-gray-400">HSN: {item.hsn}</span>}
                         </td>
                         <td className="py-1.5 text-center">
                           {item.qty} {item.unit}
                         </td>
-                        <td className="py-1.5 text-right">?{item.rate}</td>
+                        <td className="py-1.5 text-right">₹{item.rate}</td>
                         {invSettings.showGst && <td className="py-1.5 text-right">{item.gst}%</td>}
-                        <td className="py-1.5 text-right pr-1">?{Number(item.total || 0).toFixed(2)}</td>
+                        <td className="py-1.5 text-right pr-1">₹{Number(item.total || 0).toFixed(2)}</td>
                       </tr>
                     ))}
                     {invItems.length === 0 && (
@@ -706,23 +806,23 @@ const ToolsHub = ({
                 <div className="border-t-2 border-gray-300 pt-2 space-y-1 text-[10px]">
                   <div className="flex justify-between text-gray-600">
                     <span>Subtotal</span>
-                    <span>?{totals.subtotal.toFixed(2)}</span>
+                    <span>₹{totals.subtotal.toFixed(2)}</span>
                   </div>
                   {invSettings.showGst && (
                     <div className="flex justify-between text-indigo-600">
                       <span>GST</span>
-                      <span>?{totals.totalGst.toFixed(2)}</span>
+                      <span>₹{totals.totalGst.toFixed(2)}</span>
                     </div>
                   )}
                   {invSettings.discount > 0 && (
                     <div className="flex justify-between text-green-600">
                       <span>Discount</span>
-                      <span>-?{totals.discountAmt.toFixed(2)}</span>
+                      <span>-₹{totals.discountAmt.toFixed(2)}</span>
                     </div>
                   )}
                   <div className="flex justify-between text-lg font-black border-t-2 border-indigo-600 pt-2 mt-2">
                     <span>TOTAL</span>
-                    <span className="text-indigo-700">?{totals.grandTotal.toFixed(2)}</span>
+                    <span className="text-indigo-700">₹{totals.grandTotal.toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -764,20 +864,28 @@ const ToolsHub = ({
             <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-xl border-2 border-indigo-100 mb-4">
               <p className="text-xs font-bold text-indigo-600 mb-2">ADD ITEM</p>
               <div className="grid grid-cols-2 gap-2 mb-2">
+                <select
+                  className="col-span-2 p-2.5 border-2 rounded-xl font-semibold text-sm bg-white"
+                  value=""
+                  onChange={e => {
+                    const pageId = (e.target as HTMLSelectElement).value;
+                    const selected = pages.find(p => String(p.id) === String(pageId));
+                    if (selected?.itemName) setInvCurrentItem({ ...invCurrentItem, name: selected.itemName });
+                  }}
+                >
+                  <option value="">Select from Pages (optional) ▼</option>
+                  {(pages || []).map((p: any) => (
+                    <option key={p.id} value={p.id}>
+                      {p.pageNo}. {p.itemName}
+                    </option>
+                  ))}
+                </select>
                 <input
                   className="col-span-2 p-2.5 border-2 rounded-xl font-bold text-sm"
                   placeholder="Item Name *"
                   value={invCurrentItem.name}
                   onChange={e => setInvCurrentItem({ ...invCurrentItem, name: e.target.value })}
                 />
-                {invSettings.showGst && (
-                  <input
-                    className="p-2 border-2 rounded-lg text-sm"
-                    placeholder="HSN Code"
-                    value={invCurrentItem.hsn}
-                    onChange={e => setInvCurrentItem({ ...invCurrentItem, hsn: e.target.value })}
-                  />
-                )}
               </div>
 
               <div className="grid grid-cols-4 gap-2">
@@ -791,7 +899,7 @@ const ToolsHub = ({
                 <input
                   type="number"
                   className="p-2 border-2 rounded-lg text-sm"
-                  placeholder="Rate ?"
+                  placeholder="Rate ₹"
                   value={invCurrentItem.rate || ''}
                   onChange={e => setInvCurrentItem({ ...invCurrentItem, rate: parseFloat(e.target.value) })}
                 />
@@ -824,10 +932,10 @@ const ToolsHub = ({
                 value={invSettings.paymentMode}
                 onChange={e => setInvSettings({ ...invSettings, paymentMode: (e.target as HTMLSelectElement).value })}
               >
-                <option value="cash">?? Cash</option>
-                <option value="upi">?? UPI</option>
-                <option value="card">?? Card</option>
-                <option value="credit">?? Credit</option>
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="card">Card</option>
+                <option value="credit">Credit</option>
               </select>
               <div className="flex">
                 <input
@@ -842,7 +950,7 @@ const ToolsHub = ({
                   value={invSettings.discountType}
                   onChange={e => setInvSettings({ ...invSettings, discountType: (e.target as HTMLSelectElement).value })}
                 >
-                  <option value="flat">?</option>
+                  <option value="flat">₹</option>
                   <option value="percent">%</option>
                 </select>
               </div>
@@ -855,7 +963,7 @@ const ToolsHub = ({
                   <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-sm">
                     <span className="font-medium">{item.name}   {item.qty}</span>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold">?{item.total.toFixed(0)}</span>
+                      <span className="font-bold">₹{item.total.toFixed(0)}</span>
                       <button
                         onClick={() => deleteInvItem(item.id)}
                         className="text-red-500 p-1 hover:bg-red-50 rounded"
@@ -1112,11 +1220,11 @@ const ToolsHub = ({
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between py-2 border-b border-blue-100">
                   <span className="text-gray-600">Base Amount</span>
-                  <span className="font-bold">?{baseAmt.toFixed(2)}</span>
+                  <span className="font-bold">₹{baseAmt.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-blue-100">
                   <span className="text-gray-600">GST ({gstInput.rate}%)</span>
-                  <span className="font-bold text-blue-600">?{gstAmt.toFixed(2)}</span>
+                  <span className="font-bold text-blue-600">₹{gstAmt.toFixed(2)}</span>
                 </div>
 
                 {/* CGST/SGST Breakdown */}
@@ -1125,22 +1233,22 @@ const ToolsHub = ({
                   <div className="grid grid-cols-2 gap-2">
                     <div className="text-center p-2 bg-blue-100/50 rounded-lg">
                       <p className="text-xs text-blue-600">CGST ({gstInput.rate / 2}%)</p>
-                      <p className="font-bold text-blue-800">?{cgst.toFixed(2)}</p>
+                      <p className="font-bold text-blue-800">₹{cgst.toFixed(2)}</p>
                     </div>
                     <div className="text-center p-2 bg-indigo-100/50 rounded-lg">
                       <p className="text-xs text-indigo-600">SGST ({gstInput.rate / 2}%)</p>
-                      <p className="font-bold text-indigo-800">?{sgst.toFixed(2)}</p>
+                      <p className="font-bold text-indigo-800">₹{sgst.toFixed(2)}</p>
                     </div>
                   </div>
                   <div className="mt-2 text-center p-2 bg-purple-100/50 rounded-lg">
                     <p className="text-xs text-purple-600">IGST (Inter-State) ({gstInput.rate}%)</p>
-                    <p className="font-bold text-purple-800">?{igst.toFixed(2)}</p>
+                    <p className="font-bold text-purple-800">₹{igst.toFixed(2)}</p>
                   </div>
                 </div>
 
                 <div className="flex justify-between text-2xl font-bold pt-2">
                   <span>Final Amount</span>
-                  <span className="text-green-600">?{finalAmt.toFixed(2)}</span>
+                  <span className="text-green-600">₹{finalAmt.toFixed(2)}</span>
                 </div>
               </div>
             </div>
@@ -1148,9 +1256,9 @@ const ToolsHub = ({
             <button
               onClick={() =>
                 navigator.clipboard.writeText(
-                  `GST Calculation\n???????????????\nBase: ?${baseAmt.toFixed(2)}\nGST @${gstInput.rate}%: ?${gstAmt.toFixed(
+                  `GST Calculation\n----------------\nBase: ₹${baseAmt.toFixed(2)}\nGST @${gstInput.rate}%: ₹${gstAmt.toFixed(
                     2
-                  )}\n  CGST: ?${cgst.toFixed(2)}\n  SGST: ?${sgst.toFixed(2)}\n???????????????\nTotal: ?${finalAmt.toFixed(2)}`
+                  )}\n  CGST: ₹${cgst.toFixed(2)}\n  SGST: ₹${sgst.toFixed(2)}\n----------------\nTotal: ₹${finalAmt.toFixed(2)}`
                 )
               }
               className="w-full py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transition-all"
@@ -1194,7 +1302,7 @@ const ToolsHub = ({
                   marginInput.mode === 'profit' ? 'bg-white shadow-md text-purple-600' : 'text-gray-500 hover:text-purple-400'
                 }`}
               >
-                ?? Profit Analysis
+                Profit Analysis
               </button>
               <button
                 onClick={() => setMarginInput({ ...marginInput, mode: 'markup' })}
@@ -1202,7 +1310,7 @@ const ToolsHub = ({
                   marginInput.mode === 'markup' ? 'bg-white shadow-md text-purple-600' : 'text-gray-500 hover:text-purple-400'
                 }`}
               >
-                ?? Markup Pricing
+                Markup Pricing
               </button>
               <button
                 onClick={() => setMarginInput({ ...marginInput, mode: 'discount' })}
@@ -1210,7 +1318,7 @@ const ToolsHub = ({
                   marginInput.mode === 'discount' ? 'bg-white shadow-md text-purple-600' : 'text-gray-500 hover:text-purple-400'
                 }`}
               >
-                ??? Discount
+                Discount
               </button>
             </div>
 
@@ -1221,7 +1329,7 @@ const ToolsHub = ({
                     <label className="text-xs font-bold text-gray-500 mb-1 block">BUYING COST</label>
                     <input
                       type="number"
-                      placeholder="?0"
+                      placeholder="₹0"
                       className={`${commonInputClass} mb-0 text-center text-xl`}
                       value={marginInput.cost}
                       onChange={e => setMarginInput({ ...marginInput, cost: e.target.value })}
@@ -1231,7 +1339,7 @@ const ToolsHub = ({
                     <label className="text-xs font-bold text-gray-500 mb-1 block">SELLING PRICE</label>
                     <input
                       type="number"
-                      placeholder="?0"
+                      placeholder="₹0"
                       className={`${commonInputClass} mb-0 text-center text-xl`}
                       value={marginInput.sell}
                       onChange={e => setMarginInput({ ...marginInput, sell: e.target.value })}
@@ -1250,10 +1358,10 @@ const ToolsHub = ({
                     {/* Main Profit Display */}
                     <div className="text-center mb-4">
                       <p className={`text-xs font-bold mb-1 ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {profit >= 0 ? '?? PROFIT' : '?? LOSS'}
+                        {profit >= 0 ? 'PROFIT' : 'LOSS'}
                       </p>
                       <p className={`text-4xl font-black ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        ?{Math.abs(profit).toFixed(2)}
+                        ₹{Math.abs(profit).toFixed(2)}
                       </p>
                     </div>
 
@@ -1289,7 +1397,7 @@ const ToolsHub = ({
                   <label className="text-xs font-bold text-gray-500 mb-1 block">BUYING COST</label>
                   <input
                     type="number"
-                    placeholder="?0"
+                    placeholder="₹0"
                     className={`${commonInputClass} mb-0 text-center text-xl`}
                     value={marginInput.cost}
                     onChange={e => setMarginInput({ ...marginInput, cost: e.target.value })}
@@ -1324,9 +1432,9 @@ const ToolsHub = ({
                   <div className="bg-gradient-to-br from-purple-50 to-indigo-50 p-4 rounded-2xl border-2 border-purple-200">
                     <div className="text-center">
                       <p className="text-xs font-bold text-purple-600 mb-1">RECOMMENDED SELLING PRICE</p>
-                      <p className="text-4xl font-black text-purple-700">?{sellFromMarkup.toFixed(2)}</p>
+                      <p className="text-4xl font-black text-purple-700">₹{sellFromMarkup.toFixed(2)}</p>
                       <p className="text-sm text-gray-500 mt-2">
-                        Profit per unit: <span className="font-bold text-green-600">?{(sellFromMarkup - cost).toFixed(2)}</span>
+                        Profit per unit: <span className="font-bold text-green-600">₹{(sellFromMarkup - cost).toFixed(2)}</span>
                       </p>
                     </div>
                   </div>
@@ -1338,7 +1446,7 @@ const ToolsHub = ({
                   <label className="text-xs font-bold text-gray-500 mb-1 block">ORIGINAL PRICE (MRP)</label>
                   <input
                     type="number"
-                    placeholder="?0"
+                    placeholder="₹0"
                     className={`${commonInputClass} mb-0 text-center text-xl`}
                     value={marginInput.cost}
                     onChange={e => setMarginInput({ ...marginInput, cost: e.target.value })}
@@ -1372,11 +1480,11 @@ const ToolsHub = ({
                 <div className="bg-gradient-to-br from-orange-50 to-yellow-50 p-4 rounded-2xl border-2 border-orange-200">
                   <div className="flex justify-between items-center mb-3 pb-3 border-b border-orange-200">
                     <span className="text-gray-600">You Save</span>
-                    <span className="text-xl font-bold text-orange-600">?{((cost * marginInput.discount) / 100).toFixed(2)}</span>
+                    <span className="text-xl font-bold text-orange-600">₹{((cost * marginInput.discount) / 100).toFixed(2)}</span>
                   </div>
                   <div className="text-center">
                     <p className="text-xs font-bold text-green-600 mb-1">FINAL PAYABLE AMOUNT</p>
-                    <p className="text-4xl font-black text-green-700">?{(cost - (cost * marginInput.discount) / 100).toFixed(2)}</p>
+                    <p className="text-4xl font-black text-green-700">₹{(cost - (cost * marginInput.discount) / 100).toFixed(2)}</p>
                   </div>
                 </div>
               </>
@@ -1414,20 +1522,20 @@ const ToolsHub = ({
         };
 
         const convLabels: any = {
-          kgToTon: 'KG ? Tons',
-          tonToKg: 'Tons ? KG',
-          kgToQuintal: 'KG ? Quintals',
-          quintalToKg: 'Quintals ? KG',
-          oil: 'Liters ? KG (Oil)',
-          ghee: 'Liters ? KG (Ghee)',
-          feetToM: 'Feet ? Meters',
-          mToFeet: 'Meters ? Feet',
-          inchToCm: 'Inch ? CM',
-          cmToInch: 'CM ? Inch',
-          sqftToSqm: 'Sq.ft ? Sq.m',
-          sqmToSqft: 'Sq.m ? Sq.ft',
-          gajaToSqft: 'Gaja ? Sq.ft',
-          bighaToSqft: 'Bigha ? Sq.ft',
+          kgToTon: 'KG → Tons',
+          tonToKg: 'Tons → KG',
+          kgToQuintal: 'KG → Quintals',
+          quintalToKg: 'Quintals → KG',
+          oil: 'Liters → KG (Oil)',
+          ghee: 'Liters → KG (Ghee)',
+          feetToM: 'Feet → Meters',
+          mToFeet: 'Meters → Feet',
+          inchToCm: 'Inch → CM',
+          cmToInch: 'CM → Inch',
+          sqftToSqm: 'Sq.ft → Sq.m',
+          sqmToSqft: 'Sq.m → Sq.ft',
+          gajaToSqft: 'Gaja → Sq.ft',
+          bighaToSqft: 'Bigha → Sq.ft',
         };
 
         return (
@@ -1439,7 +1547,7 @@ const ToolsHub = ({
 
             {/* Category Tabs */}
             <div className="flex gap-1 mb-3 overflow-x-auto pb-2">
-              {Object.entries({ weight: '?? Weight', liquid: '?? Liquid', length: '?? Length', area: '?? Area' }).map(([key, label]) => (
+              {Object.entries({ weight: 'Weight', liquid: 'Liquid', length: 'Length', area: 'Area' }).map(([key, label]) => (
                 <button
                   key={key}
                   onClick={() => setConvInput({ ...convInput, type: categories[key][0] })}
@@ -1560,11 +1668,6 @@ const ToolsHub = ({
                 </div>
               </div>
 
-              <div className="absolute bottom-4 right-4 w-16 h-16 bg-white rounded-lg p-1">
-                <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 rounded flex items-center justify-center text-gray-400 text-[8px]">
-                  QR
-                </div>
-              </div>
             </div>
 
             <div className="flex gap-2">
@@ -1600,6 +1703,61 @@ const ToolsHub = ({
               </button>
             </div>
             <p className="text-center text-xs opacity-50 mt-3">Update in Settings → Profile</p>
+          </div>
+        );
+
+      case 'calculator':
+        return (
+          <div className={cardClass}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-xl flex items-center gap-2">
+                <Calculator className="text-slate-600" size={24} />
+                Calculator
+              </h3>
+              <button
+                onClick={calcClear}
+                className="text-xs text-red-500 font-bold bg-red-50 px-3 py-1 rounded-full"
+              >
+                CLEAR
+              </button>
+            </div>
+
+            <div className={`w-full rounded-2xl p-4 mb-4 border-2 ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
+              <div className={`text-right font-black text-4xl leading-none ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                {calcDisplay}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-3">
+              <button onClick={calcClear} className={`py-4 rounded-2xl font-black ${isDark ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-800'}`}>C</button>
+              <button onClick={calcToggleSign} className={`py-4 rounded-2xl font-black ${isDark ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-800'}`}>±</button>
+              <button onClick={calcPercent} className={`py-4 rounded-2xl font-black ${isDark ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-800'}`}>%</button>
+              <button onClick={() => calcSetOperator('/')} className="py-4 rounded-2xl font-black bg-indigo-600 text-white">÷</button>
+
+              {['7','8','9'].map((d) => (
+                <button key={d} onClick={() => calcInputDigit(d)} className={`py-4 rounded-2xl font-black ${isDark ? 'bg-slate-800 text-white' : 'bg-white text-gray-900 border border-gray-200'}`}>{d}</button>
+              ))}
+              <button onClick={() => calcSetOperator('*')} className="py-4 rounded-2xl font-black bg-indigo-600 text-white">×</button>
+
+              {['4','5','6'].map((d) => (
+                <button key={d} onClick={() => calcInputDigit(d)} className={`py-4 rounded-2xl font-black ${isDark ? 'bg-slate-800 text-white' : 'bg-white text-gray-900 border border-gray-200'}`}>{d}</button>
+              ))}
+              <button onClick={() => calcSetOperator('-')} className="py-4 rounded-2xl font-black bg-indigo-600 text-white">−</button>
+
+              {['1','2','3'].map((d) => (
+                <button key={d} onClick={() => calcInputDigit(d)} className={`py-4 rounded-2xl font-black ${isDark ? 'bg-slate-800 text-white' : 'bg-white text-gray-900 border border-gray-200'}`}>{d}</button>
+              ))}
+              <button onClick={() => calcSetOperator('+')} className="py-4 rounded-2xl font-black bg-indigo-600 text-white">+</button>
+
+              <button
+                onClick={() => calcInputDigit('0')}
+                className={`col-span-2 py-4 rounded-2xl font-black ${isDark ? 'bg-slate-800 text-white' : 'bg-white text-gray-900 border border-gray-200'}`}
+              >
+                0
+              </button>
+              <button onClick={calcInputDot} className={`py-4 rounded-2xl font-black ${isDark ? 'bg-slate-800 text-white' : 'bg-white text-gray-900 border border-gray-200'}`}>.</button>
+              <button onClick={calcEquals} className="py-4 rounded-2xl font-black bg-green-600 text-white">=</button>
+            </div>
           </div>
         );
 
@@ -1739,7 +1897,7 @@ const ToolsHub = ({
                 />
                 <input
                   type="number"
-                  placeholder="Rate ?"
+                  placeholder="Rate ₹"
                   className="p-2 rounded-lg border text-sm"
                   value={stockCalc.newItem.rate || ''}
                   onChange={e =>
@@ -1769,11 +1927,11 @@ const ToolsHub = ({
                   <div>
                     <p className="font-bold text-sm">{item.name}</p>
                     <p className="text-xs text-gray-500">
-                      {item.qty}   ?{item.rate}
+                      {item.qty}   ₹{item.rate}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="font-bold text-cyan-600">?{(item.qty * item.rate).toFixed(0)}</span>
+                    <span className="font-bold text-cyan-600">₹{(item.qty * item.rate).toFixed(0)}</span>
                     <button
                       onClick={() => setStockCalc({ ...stockCalc, items: stockCalc.items.filter((i: any) => i.id !== item.id) })}
                       className="text-red-400 hover:text-red-600"
@@ -1806,7 +1964,7 @@ const ToolsHub = ({
                 </div>
                 <div className="text-center pt-3 border-t border-cyan-200">
                   <p className="text-xs font-bold text-cyan-600 mb-1">TOTAL STOCK VALUE</p>
-                  <p className="text-4xl font-black text-cyan-700">?{totalValue.toLocaleString()}</p>
+                  <p className="text-4xl font-black text-cyan-700">₹{totalValue.toLocaleString()}</p>
                 </div>
               </div>
             )}

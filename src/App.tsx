@@ -14,7 +14,8 @@ import {
   Pin, PinOff, PenTool, Highlighter, Circle as CircleIcon, Eraser, Type,
   RefreshCw, RotateCcw, Printer, FilePlus, Send,
   Bold, Italic, Underline, Clock, Package,
-  PackageX, TrendingDown, Tag, Vibrate, Activity
+  PackageX, TrendingDown, Tag, Vibrate, Activity,
+  GripVertical
 } from 'lucide-react';
 
 import { convertToHindi } from './utils/translator.ts';
@@ -221,6 +222,12 @@ function DukanRegister() {
 
   const [editingEntry, setEditingEntry] = useState(null); 
   const [managingPage, setManagingPage] = useState(null); 
+
+  // Page drag reordering (Pages grid)
+  const [draggingPageId, setDraggingPageId] = useState<any>(null);
+  const [dragOverPageId, setDragOverPageId] = useState<any>(null);
+  const draggingPageIdRef = useRef<any>(null);
+  const dragOverPageIdRef = useRef<any>(null);
   
   const [input, setInput] = useState({ itemName: '', carName: '', qty: '' });
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -954,6 +961,34 @@ function DukanRegister() {
     showToast(`Page Moved to Position #${swapIndex + 1}`);
   };
 
+  const getPageIdFromPoint = (clientX: number, clientY: number) => {
+    try {
+      const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+      const pageEl = (el?.closest?.('[data-page-id]') as HTMLElement | null) ?? null;
+      const idStr = pageEl?.getAttribute('data-page-id');
+      if (!idStr) return null;
+      const num = Number(idStr);
+      return Number.isNaN(num) ? idStr : num;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleReorderPage = async (fromPageId: any, toPageId: any) => {
+    const pagesSorted = [...(data.pages || [])].sort((a, b) => (a.pageNo || 0) - (b.pageNo || 0));
+    const fromIndex = pagesSorted.findIndex(p => p.id === fromPageId);
+    const toIndex = pagesSorted.findIndex(p => p.id === toPageId);
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+
+    const next = [...pagesSorted];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+
+    const renumberedPages = next.map((p, idx) => ({ ...p, pageNo: idx + 1 }));
+    await pushToFirebase({ ...data, pages: renumberedPages });
+    showToast(t('Page order updated'));
+  };
+
   const handleMoveEntry = async (direction) => {
       if (!editingEntry) return;
       const pageEntries = data.entries.filter(e => e.pageId === editingEntry.pageId); 
@@ -1167,35 +1202,69 @@ function DukanRegister() {
       );
   };
 
+  const isStandalone = useMemo(() => {
+    try {
+      // PWA standalone (Android/desktop) OR iOS standalone
+      return (
+        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+        (window.navigator && (window.navigator as any).standalone === true)
+      );
+    } catch {
+      return false;
+    }
+  }, []);
+
     // Bills UI removed   feature deprecated per user request
 
   if (authLoading || (user && dbLoading)) {
+    // In PWA standalone mode, the OS already shows the app icon splash.
+    // To avoid a "double logo" effect, show a premium spinner-only loader.
+    if (isStandalone) {
       return (
-          <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white p-10">
-              <div className="flex flex-col items-center justify-center gap-8">
-                  {/* Logo Animation */}
-                  <div className="relative">
-                      <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-20 animate-pulse"></div>
-                      <div className="relative bg-gradient-to-br from-blue-600 to-purple-600 p-6 rounded-3xl shadow-2xl">
-                          <Store size={48} className="text-white" />
-                      </div>
-                  </div>
-                  
-                  <div className="text-center">
-                    <h1 className="text-3xl font-black tracking-widest text-white mb-2">AUTONEX</h1>
-                    <p className="text-slate-400 text-sm font-medium">Smart Auto Parts Management</p>
-                  </div>
-                  
-                  {/* Loading Spinner */}
-                  <div className="relative">
-                      <div className="w-12 h-12 border-4 border-slate-700 border-t-blue-500 rounded-full animate-spin"></div>
-                      <div className="absolute inset-0 w-12 h-12 border-4 border-transparent border-b-purple-500 rounded-full animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
-                  </div>
-                  
-                  <p className="text-slate-500 text-xs font-semibold animate-pulse">Loading your data...</p>
-              </div>
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white p-10">
+          <div className="flex flex-col items-center justify-center gap-6">
+            <div className="relative">
+              <div className="w-12 h-12 border-4 border-slate-700 border-t-blue-500 rounded-full animate-spin"></div>
+              <div
+                className="absolute inset-0 w-12 h-12 border-4 border-transparent border-b-purple-500 rounded-full animate-spin"
+                style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}
+              ></div>
+            </div>
+            <p className="text-slate-500 text-xs font-semibold animate-pulse">Loading…</p>
           </div>
+        </div>
       );
+    }
+
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white p-10">
+        <div className="flex flex-col items-center justify-center gap-8">
+          {/* Logo Animation */}
+          <div className="relative">
+            <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-20 animate-pulse"></div>
+            <div className="relative bg-gradient-to-br from-blue-600 to-purple-600 p-6 rounded-3xl shadow-2xl">
+              <img src="/myicon.svg" alt="StoreLink" className="w-12 h-12" />
+            </div>
+          </div>
+
+          <div className="text-center">
+            <h1 className="text-3xl font-black tracking-widest text-white mb-2">STORELINK</h1>
+            <p className="text-slate-400 text-sm font-medium">Business Tools & Billing</p>
+          </div>
+
+          {/* Loading Spinner */}
+          <div className="relative">
+            <div className="w-12 h-12 border-4 border-slate-700 border-t-blue-500 rounded-full animate-spin"></div>
+            <div
+              className="absolute inset-0 w-12 h-12 border-4 border-transparent border-b-purple-500 rounded-full animate-spin"
+              style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}
+            ></div>
+          </div>
+
+          <p className="text-slate-500 text-xs font-semibold animate-pulse">Loading your data...</p>
+        </div>
+      </div>
+    );
   }
 
   if (!user) {
@@ -1210,10 +1279,10 @@ function DukanRegister() {
            {/* Logo */}
            <div className="flex justify-center mb-6">
              <div className="bg-gradient-to-br from-blue-600 to-purple-600 p-4 rounded-2xl shadow-lg">
-               <Store size={32} className="text-white" />
+               <img src="/myicon.svg" alt="StoreLink" className="w-8 h-8" />
              </div>
            </div>
-           <h1 className="text-2xl font-bold text-center mb-1">Welcome to Autonex</h1>
+           <h1 className="text-2xl font-bold text-center mb-1">Welcome to StoreLink</h1>
            <p className="text-center text-slate-400 mb-8 text-sm">Sign in to manage your inventory</p>
            
            <form onSubmit={handleAuth} className="space-y-4">
@@ -1271,11 +1340,11 @@ function DukanRegister() {
         <div className="flex justify-between items-center mb-3">
           <div className="flex items-center gap-3">
             <div className={`p-2.5 rounded-2xl ${isDark ? 'bg-blue-500/20' : 'bg-amber-200'}`}>
-              <Store size={24} className={isDark ? 'text-blue-400' : 'text-amber-700'} />
+              <img src="/myicon.svg" alt="StoreLink" className="w-6 h-6" />
             </div>
             <div>
               <h1 className={`text-xl font-extrabold ${isDark ? 'text-white' : 'text-amber-900'} truncate max-w-[180px]`}>
-                {data.settings.shopName || "Autonex"}
+                {data.settings.shopName || "StoreLink"}
               </h1>
               <p className={`text-[10px] font-semibold ${isDark ? 'text-slate-400' : 'text-amber-600'}`}>Smart Auto Parts Management</p>
             </div>
@@ -1285,6 +1354,16 @@ function DukanRegister() {
                 {isOnline ? <Wifi size={12}/> : <WifiOff size={12} className="animate-pulse"/>}
                 <span className="hidden sm:inline">{isOnline ? 'Online' : 'Offline'}</span>
               </div>
+              {deferredPrompt && (
+                <button
+                  onClick={_handleInstallClick}
+                  className={`p-2.5 rounded-xl border transition-all hover:scale-105 ${isDark ? 'bg-slate-700 border-slate-500 hover:bg-slate-600 text-white' : 'bg-white border-gray-200 shadow-sm hover:shadow-md text-gray-800'}`}
+                  title="Add to Home Screen"
+                  type="button"
+                >
+                  <Pin size={18} />
+                </button>
+              )}
               <TranslateBtn />
           </div>
         </div>
@@ -1321,6 +1400,7 @@ function DukanRegister() {
              {id: 'notes', icon: <StickyNote size={18}/>, label: 'Notes', col: 'text-yellow-600 bg-yellow-100'},
              {id: 'gst', icon: <Percent size={18}/>, label: 'GST', col: 'text-blue-600 bg-blue-100'},
              {id: 'margin', icon: <Calculator size={18}/>, label: 'Profit', col: 'text-purple-600 bg-purple-100'},
+             {id: 'calculator', icon: <Calculator size={18}/>, label: 'Calc', col: 'text-slate-700 bg-slate-100'},
              {id: 'card', icon: <CreditCard size={18}/>, label: 'Card', col: 'text-orange-600 bg-orange-100'},
              {id: 'converter', icon: <RefreshCcw size={18}/>, label: 'Convert', col: 'text-green-600 bg-green-100'},
              {id: 'translator', icon: <Languages size={18}/>, label: 'Trans', col: 'text-pink-600 bg-pink-100'},
@@ -1431,9 +1511,59 @@ function DukanRegister() {
         <div className="flex flex-col gap-3">
             {globalSearchResults.pages.map((page) => {
                   const totalItems = pageCounts[page.id] || 0;
+                  const isDragTarget = draggingPageId && dragOverPageId === page.id;
                   return (
-                     <div key={page.id} onClick={() => { setActivePageId(page.id); setView('page'); setPageSearchTerm(''); }} className={`relative p-4 rounded-xl border-2 shadow-sm cursor-pointer active:scale-95 transition-all flex flex-row items-center justify-between h-24 ${isDark ? 'bg-slate-800 border-slate-600 hover:border-blue-500' : 'bg-white border-gray-200 hover:border-blue-500'}`}>
+                     <div
+                       key={page.id}
+                       data-page-id={page.id}
+                       onClick={() => { setActivePageId(page.id); setView('page'); setPageSearchTerm(''); }}
+                       className={`relative p-4 rounded-xl border-2 shadow-sm cursor-pointer active:scale-95 transition-all flex flex-row items-center justify-between h-24 ${isDark ? 'bg-slate-800 border-slate-600 hover:border-blue-500' : 'bg-white border-gray-200 hover:border-blue-500'} ${isDragTarget ? 'border-blue-500' : ''}`}
+                     >
                          <div className="flex items-center gap-4">
+                              <button
+                                type="button"
+                                title={t('Hold and drag to reorder')}
+                                onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => {
+                                  e.stopPropagation();
+                                  draggingPageIdRef.current = page.id;
+                                  dragOverPageIdRef.current = page.id;
+                                  setDraggingPageId(page.id);
+                                  setDragOverPageId(page.id);
+                                  try { (e.currentTarget as any).setPointerCapture?.(e.pointerId); } catch { /* noop */ }
+                                }}
+                                onPointerMove={(e) => {
+                                  if (!draggingPageIdRef.current) return;
+                                  const overId = getPageIdFromPoint(e.clientX, e.clientY);
+                                  if (overId == null) return;
+                                  if (dragOverPageIdRef.current !== overId) {
+                                    dragOverPageIdRef.current = overId;
+                                    setDragOverPageId(overId);
+                                  }
+                                }}
+                                onPointerUp={async (e) => {
+                                  e.stopPropagation();
+                                  const fromId = draggingPageIdRef.current;
+                                  const toId = dragOverPageIdRef.current;
+                                  draggingPageIdRef.current = null;
+                                  dragOverPageIdRef.current = null;
+                                  setDraggingPageId(null);
+                                  setDragOverPageId(null);
+                                  if (fromId && toId && fromId !== toId) {
+                                    await handleReorderPage(fromId, toId);
+                                  }
+                                }}
+                                onPointerCancel={(e) => {
+                                  e.stopPropagation();
+                                  draggingPageIdRef.current = null;
+                                  dragOverPageIdRef.current = null;
+                                  setDraggingPageId(null);
+                                  setDragOverPageId(null);
+                                }}
+                                className={`p-2 rounded-lg border ${isDark ? 'bg-slate-900/40 border-slate-700 text-slate-300' : 'bg-gray-50 border-gray-200 text-gray-500'} active:scale-95 transition-transform cursor-grab active:cursor-grabbing`}
+                              >
+                                <GripVertical size={18} />
+                              </button>
                               <div className="bg-gray-100 rounded p-2 border font-bold text-gray-500">#{page.pageNo}</div>
                               <div>
                                  <h3 className={`font-bold text-xl leading-tight ${isDark ? 'text-white' : 'text-gray-800'}`}>{t(page.itemName)}</h3>
@@ -2357,7 +2487,7 @@ function DukanRegister() {
       
       {/* Bills view removed */}
 
-      {view === 'tools' && <ToolsHubView onBack={closeTools} t={t} isDark={isDark} initialTool={activeToolId} pinnedTools={data.settings.pinnedTools || []} onTogglePin={handleTogglePin} shopDetails={data.settings}/>}
+      {view === 'tools' && <ToolsHubView onBack={closeTools} t={t} isDark={isDark} initialTool={activeToolId} pinnedTools={data.settings.pinnedTools || []} onTogglePin={handleTogglePin} shopDetails={data.settings} pages={data.pages || []} />}
       
       {renderSaveButton()}
 
