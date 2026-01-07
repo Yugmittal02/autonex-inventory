@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
 import { 
   Plus, Minus, Search, X, Trash2, ArrowLeft, Book, Grid, 
   Mic, Settings, AlertTriangle, Languages, Lock, Bell, 
@@ -20,11 +20,24 @@ import {
 
 import { convertToHindi } from './utils/translator.ts';
 
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  deleteField,
+  doc,
+  limit as fsLimit,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  updateDoc,
+  writeBatch,
+} from 'firebase/firestore';
 import { auth, db, firebaseApp } from './services/firebaseCore';
 import { getFirebaseStorageModule } from './services/firebaseStorage';
 import { SmartSearchEngine, applySynonyms, performSmartSearch } from './features/search/smartSearch';
 import StockSearchView from './features/search/StockSearchView';
+import { useRegisterSW } from 'virtual:pwa-register/react';
 import {
   getAuth,
   signInWithEmailAndPassword,
@@ -54,9 +67,11 @@ import { ImageModal } from './components/ui/ImageModal';
 import { VoiceInput } from './features/voice/VoiceInput';
 import { EntryRow } from './features/inventory/EntryRow';
 import NavBtn from './components/navigation/NavBtn';
-import ToolsHubView from './tools/ToolsHub';
+// Lazy-load heavy Tools bundle
 
 const app = firebaseApp;
+
+const ToolsHubView = lazy(() => import('./tools/ToolsHub'));
 
 type PriorityQueueEntry<T> = { value: T; priority: number };
 
@@ -127,6 +142,31 @@ const defaultData = {
 
 
 function DukanRegister() {
+  const {
+    needRefresh: [needRefresh, setNeedRefresh],
+    updateServiceWorker,
+  } = useRegisterSW();
+
+  const updateAvailablePrompt = needRefresh ? (
+    <div className="fixed bottom-4 right-4 bg-blue-600 text-white p-4 rounded-xl shadow-2xl z-[1000]">
+      <p className="mb-2 font-semibold">New update available!</p>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => updateServiceWorker(true)}
+          className="bg-white text-blue-600 px-3 py-1 rounded font-bold"
+        >
+          Reload
+        </button>
+        <button
+          onClick={() => setNeedRefresh(false)}
+          className="bg-blue-500/30 text-white px-3 py-1 rounded font-bold"
+        >
+          Later
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   useEffect(() => {
     console.info('DukanRegister mounted', { tabId: window.__dukan_tabId, time: Date.now() });
     return () => console.info('DukanRegister unmounted', { tabId: window.__dukan_tabId, time: Date.now() });
@@ -142,6 +182,12 @@ function DukanRegister() {
   const [dbLoading, setDbLoading] = useState(false);
   const [fbDocId, setFbDocId] = useState(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  // Storage mode v2: keep appData doc slim; store heavy lists in separate collections.
+  const [useV2Storage, setUseV2Storage] = useState(false);
+  const attemptedV2MigrationRef = useRef(false);
+  const BILLS_LIMIT = 50;
+  const SALES_EVENTS_LIMIT = 2000;
     
   const [view, setView] = useState('generalIndex'); 
   const [activePageId, setActivePageId] = useState(null);
@@ -244,6 +290,10 @@ function DukanRegister() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [notifPermission, setNotifPermission] = useState('default');
   const [toast, setToast] = useState(null);
+
+  // Wake Lock (Keep Screen On)
+  const wakeLockRef = useRef<any>(null);
+  const [keepScreenOn, setKeepScreenOn] = useState(false);
   
   // ??? IMAGE STATE
   const [viewImage, setViewImage] = useState(null);
@@ -273,9 +323,134 @@ function DukanRegister() {
   const dataRef = useRef(data);
   useEffect(() => { dataRef.current = data; }, [data]);
 
+  const sanitizeAppDataWrite = useCallback((payload: any) => {
+    if (!payload) return payload;
+    if (!useV2Storage) return payload;
+    // Prevent re-growing the main doc after migrating heavy lists.
+    const { bills, salesEvents, ...rest } = payload;
+    return { ...rest, bills: [], salesEvents: [], storageMode: 'v2' };
+  }, [useV2Storage]);
+
+  const upsertBillV2 = useCallback(async (bill: any) => {
+    if (!user) return;
+    const id = String(bill?.id ?? Date.now());
+    const ts = typeof bill?.ts === 'number' ? bill.ts : Number(bill?.id) || Date.now();
+    await setDoc(doc(db, 'users', user.uid, 'bills', id), { ...bill, id: bill?.id ?? id, ts }, { merge: true });
+  }, [user]);
+
+  const deleteBillV2 = useCallback(async (billId: any) => {
+    if (!user) return;
+    await deleteDoc(doc(db, 'users', user.uid, 'bills', String(billId)));
+  }, [user]);
+
+  const appendSalesEventsV2 = useCallback(async (events: any[]) => {
+    if (!user) return;
+    if (!events || events.length === 0) return;
+
+    // Batch in chunks to avoid 500 writes limit.
+    const CHUNK = 400;
+    for (let i = 0; i < events.length; i += CHUNK) {
+      const batch = writeBatch(db);
+      const slice = events.slice(i, i + CHUNK);
+      for (const ev of slice) {
+        const id = String(ev?.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+        const ts = typeof ev?.ts === 'number' ? ev.ts : Date.now();
+        batch.set(doc(db, 'users', user.uid, 'salesEvents', id), { ...ev, id, ts }, { merge: true });
+      }
+      await batch.commit();
+    }
+  }, [user]);
+
     const showToast = useCallback((message, type = 'success') => {
       setToast({ message, type });
     }, [setToast]);
+
+  const lastHapticTsRef = useRef(0);
+
+  const haptic = useCallback((ms: number = 50) => {
+    try {
+      const now = Date.now();
+      // Throttle: avoid double vibration when both capture + handler call it.
+      if (now - lastHapticTsRef.current < 80) return;
+      lastHapticTsRef.current = now;
+      if (navigator.vibrate) navigator.vibrate(ms);
+    } catch {
+      /* noop */
+    }
+  }, []);
+
+  const hapticFromEvent = useCallback((e: any) => {
+    try {
+      const target = e?.target as HTMLElement | null;
+      if (!target) return;
+      // Skip typing/selection interactions
+      if (target.closest?.('input, textarea, select, option')) return;
+      // Vibrate for most tappable UI controls
+      if (target.closest?.('button, [role="button"], a')) {
+        haptic(50);
+      }
+    } catch {
+      /* noop */
+    }
+  }, [haptic]);
+
+  const toggleScreenLock = useCallback(async () => {
+    try {
+      const wl = (navigator as any)?.wakeLock;
+      if (!wl?.request) {
+        showToast(t('Not supported on this phone'), 'error');
+        return;
+      }
+
+      if (wakeLockRef.current) {
+        await wakeLockRef.current.release?.();
+        wakeLockRef.current = null;
+        setKeepScreenOn(false);
+        showToast(t('Screen can sleep now'));
+        return;
+      }
+
+      const sentinel = await wl.request('screen');
+      wakeLockRef.current = sentinel;
+      setKeepScreenOn(true);
+      showToast(t('Screen will stay ON now'));
+
+      sentinel.addEventListener?.('release', () => {
+        wakeLockRef.current = null;
+        setKeepScreenOn(false);
+      });
+    } catch (err: any) {
+      console.error(err);
+      showToast(t('Wake Lock failed'), 'error');
+    }
+  }, [showToast, t]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      // Wake Lock is automatically released when the page is hidden.
+      if (!keepScreenOn) return;
+      if (document.visibilityState !== 'visible') return;
+      if (wakeLockRef.current) return;
+      // Re-request best-effort
+      (async () => {
+        try {
+          const wl = (navigator as any)?.wakeLock;
+          if (!wl?.request) return;
+          const sentinel = await wl.request('screen');
+          wakeLockRef.current = sentinel;
+          sentinel.addEventListener?.('release', () => {
+            wakeLockRef.current = null;
+            setKeepScreenOn(false);
+          });
+        } catch {
+          // If it fails, don't spam users.
+          setKeepScreenOn(false);
+        }
+      })();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [keepScreenOn]);
 
   useEffect(() => {
       setDisplayLimit(50);
@@ -349,6 +524,9 @@ function DukanRegister() {
         // store doc id for diagnostics / admin contact display
         setFbDocId(docSnapshot.id);
         const cloudData = docSnapshot.data();
+        // Decide storage mode from cloud.
+        const isV2 = cloudData?.storageMode === 'v2';
+        setUseV2Storage(isV2);
         if(!cloudData.settings) cloudData.settings = defaultData.settings;
         if(!cloudData.settings.pinnedTools) cloudData.settings.pinnedTools = []; 
         if(!cloudData.settings.shopName) cloudData.settings.shopName = 'Autonex';
@@ -361,29 +539,86 @@ function DukanRegister() {
 
         if(cloudData.settings.limit) setTempLimit(cloudData.settings.limit);
 
-        // Merge transient local state (previewUrl, uploading/progress/tempBlob, uploadFailed)
-        const localBills = (dataRef.current && dataRef.current.bills) ? dataRef.current.bills : [];
-        const localMap = new Map(localBills.map((b: any) => [b.id, b]));
+        // In v2 mode, bills/salesEvents are loaded from separate collections.
+        if (isV2) {
+          setData(prev => ({
+            ...cloudData,
+            bills: (prev && prev.bills) ? prev.bills : [],
+            salesEvents: (prev && prev.salesEvents) ? prev.salesEvents : [],
+          }));
+        } else {
+          // Legacy mode: bills are stored in the main doc.
+          // Merge transient local state (previewUrl, uploading/progress/tempBlob, uploadFailed)
+          const localBills = (dataRef.current && dataRef.current.bills) ? dataRef.current.bills : [];
+          const localMap = new Map(localBills.map((b: any) => [b.id, b]));
 
-        const mergedBills = (cloudData.bills || []).map((cb: any) => {
-          const local: any = localMap.get(cb.id);
-          if (!local) return cb;
-          return { ...cb,
-            previewUrl: local.previewUrl || local.image || null,
-            uploading: local.uploading || false,
-            progress: typeof local.progress === 'number' ? local.progress : 0,
-            tempBlob: local.tempBlob,
-            uploadFailed: local.uploadFailed || false
-          };
-        });
+          const mergedBills = (cloudData.bills || []).map((cb: any) => {
+            const local: any = localMap.get(cb.id);
+            if (!local) return cb;
+            return {
+              ...cb,
+              previewUrl: local.previewUrl || local.image || null,
+              uploading: local.uploading || false,
+              progress: typeof local.progress === 'number' ? local.progress : 0,
+              tempBlob: local.tempBlob,
+              uploadFailed: local.uploadFailed || false,
+            };
+          });
 
-        // Include any local-only bills (not yet in cloud) at the front so they remain visible
-        const cloudIds = new Set((cloudData.bills || []).map((b: any) => b.id));
-        const localOnly = localBills.filter((b: any) => !cloudIds.has(b.id));
+          // Include any local-only bills (not yet in cloud) at the front so they remain visible
+          const cloudIds = new Set((cloudData.bills || []).map((b: any) => b.id));
+          const localOnly = localBills.filter((b: any) => !cloudIds.has(b.id));
 
-        const finalData = { ...cloudData, bills: [...localOnly, ...mergedBills] };
+          const finalData = { ...cloudData, bills: [...localOnly, ...mergedBills] };
+          setData(finalData);
+        }
 
-        setData(finalData);
+        // Auto-migrate heavy arrays to v2 without data loss.
+        if (!isV2 && !attemptedV2MigrationRef.current) {
+          const shouldMigrate = (Array.isArray(cloudData.salesEvents) && cloudData.salesEvents.length > SALES_EVENTS_LIMIT)
+            || (Array.isArray(cloudData.bills) && cloudData.bills.length > BILLS_LIMIT);
+
+          if (shouldMigrate) {
+            attemptedV2MigrationRef.current = true;
+            (async () => {
+              try {
+                showToast(t('Optimizing database...'), 'error');
+
+                // Copy bills + salesEvents to new collections under users/{uid}
+                if (Array.isArray(cloudData.bills) && cloudData.bills.length) {
+                  const CHUNK = 250;
+                  for (let i = 0; i < cloudData.bills.length; i += CHUNK) {
+                    const batch = writeBatch(db);
+                    const slice = cloudData.bills.slice(i, i + CHUNK);
+                    for (const bill of slice) {
+                      const id = String(bill?.id ?? Date.now());
+                      const ts = Number(bill?.id) || Date.now();
+                      batch.set(doc(db, 'users', user.uid, 'bills', id), { ...bill, id: bill?.id ?? id, ts }, { merge: true });
+                    }
+                    await batch.commit();
+                  }
+                }
+
+                if (Array.isArray(cloudData.salesEvents) && cloudData.salesEvents.length) {
+                  await appendSalesEventsV2(cloudData.salesEvents);
+                }
+
+                // Mark v2 enabled and slim down main doc (no data loss: data is now in v2 collections).
+                await updateDoc(doc(db, 'appData', user.uid), {
+                  storageMode: 'v2',
+                  bills: deleteField(),
+                  salesEvents: deleteField(),
+                } as any);
+
+                showToast(t('Database optimized'), 'success');
+              } catch (e) {
+                console.warn('V2 migration failed; staying in legacy mode', e);
+                attemptedV2MigrationRef.current = true;
+                showToast(t('Optimization failed (permission?). Using legacy mode.'), 'error');
+              }
+            })();
+          }
+        }
       } else {
         setDoc(doc(db, "appData", user.uid), defaultData);
       }
@@ -391,6 +626,70 @@ function DukanRegister() {
     }, (error) => console.error("DB Error:", error));
     return () => unsubDb();
   }, [user]);
+
+  // v2 listeners for bills & sales events (limited)
+  useEffect(() => {
+    if (!user) return;
+    if (!useV2Storage) return;
+
+    const billsQ = query(
+      collection(db, 'users', user.uid, 'bills'),
+      orderBy('ts', 'desc'),
+      fsLimit(BILLS_LIMIT)
+    );
+
+    const unsubBills = onSnapshot(
+      billsQ,
+      (snap) => {
+        const cloudBills = snap.docs.map(d => d.data());
+
+        // Merge transient local state so optimistic uploads keep UI state.
+        const localBills = (dataRef.current && dataRef.current.bills) ? dataRef.current.bills : [];
+        const localMap = new Map(localBills.map((b: any) => [String(b.id), b]));
+
+        const mergedBills = cloudBills.map((cb: any) => {
+          const local: any = localMap.get(String(cb.id));
+          if (!local) return cb;
+          return {
+            ...cb,
+            previewUrl: local.previewUrl || local.image || null,
+            uploading: local.uploading || false,
+            progress: typeof local.progress === 'number' ? local.progress : 0,
+            tempBlob: local.tempBlob,
+            uploadFailed: local.uploadFailed || false,
+          };
+        });
+
+        // local-only bills (pending cloud) should remain visible
+        const cloudIds = new Set(cloudBills.map((b: any) => String(b.id)));
+        const localOnly = localBills.filter((b: any) => !cloudIds.has(String(b.id)));
+
+        setData(prev => ({ ...prev, bills: [...localOnly, ...mergedBills] }));
+      },
+      (e) => console.error('Bills v2 snapshot error', e)
+    );
+
+    const salesQ = query(
+      collection(db, 'users', user.uid, 'salesEvents'),
+      orderBy('ts', 'desc'),
+      fsLimit(SALES_EVENTS_LIMIT)
+    );
+
+    const unsubSales = onSnapshot(
+      salesQ,
+      (snap) => {
+        const desc = snap.docs.map(d => d.data());
+        const asc = desc.slice().reverse();
+        setData(prev => ({ ...prev, salesEvents: asc }));
+      },
+      (e) => console.error('SalesEvents v2 snapshot error', e)
+    );
+
+    return () => {
+      unsubBills();
+      unsubSales();
+    };
+  }, [user, useV2Storage]);
 
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -416,11 +715,13 @@ function DukanRegister() {
   const pushToFirebase = async (newData) => {
       if(!user) return false;
 
+      const payload = sanitizeAppDataWrite(newData);
+
       // Try to write immediately with retries; fall back to queued local writes on persistent failure
       const trySet = async (attempts = 3) => {
         for (let i = 1; i <= attempts; i++) {
           try {
-            await setDoc(doc(db, "appData", user.uid), newData);
+            await setDoc(doc(db, "appData", user.uid), payload);
             return true;
           } catch (err) {
             // If offline or persistence disabled, break and queue
@@ -442,7 +743,7 @@ function DukanRegister() {
           const key = 'dukan:pendingWrites';
           const raw = localStorage.getItem(key);
           const list = raw ? JSON.parse(raw) : [];
-          list.push({ id: Date.now() + '-' + Math.random().toString(36).slice(2,8), data: newData, ts: Date.now(), attempts: 0 });
+          list.push({ id: Date.now() + '-' + Math.random().toString(36).slice(2,8), data: payload, ts: Date.now(), attempts: 0 });
           localStorage.setItem(key, JSON.stringify(list));
           showToast(t('Saved locally. Will retry sync.'), 'error');
         } catch (e) {
@@ -464,7 +765,7 @@ function DukanRegister() {
       const remaining = [];
       for (const item of list) {
         try {
-          await setDoc(doc(db, 'appData', user.uid), item.data);
+          await setDoc(doc(db, 'appData', user.uid), sanitizeAppDataWrite(item.data));
         } catch {
           const attempts = (item.attempts || 0) + 1;
           if (attempts >= 5) {
@@ -627,8 +928,13 @@ function DukanRegister() {
       const next = { ...prev, bills: [tempBill, ...(prev.bills || [])] };
       // Persist a server-friendly bill (without object URL) so it remains after refresh
       if (user) {
-        const cloudNext = { ...prev, bills: [serverBill, ...(prev.bills || [])] };
+        const cloudNext = { ...prev, bills: useV2Storage ? [] : [serverBill, ...(prev.bills || [])] };
         pushToFirebase(cloudNext).catch(e => console.error('Initial bill save failed', e));
+        if (useV2Storage) {
+          upsertBillV2({ id: serverBill.id, date: serverBill.date, image: serverBill.image, path: serverBill.path }).catch(e => {
+            console.warn('Initial bill v2 upsert failed', e);
+          });
+        }
       } else {
         showToast('Saved locally. Sign in to persist to cloud.');
       }
@@ -669,9 +975,22 @@ function DukanRegister() {
             showToast('Upload Failed', 'error');
           }, async () => {
             const downloadUrl = await storageModule.getDownloadURL(uploadTask.snapshot.ref);
-            const updated = { ...data, bills: (data.bills || []).map(b => b.id === timestamp ? { id: timestamp, date: new Date().toISOString(), image: downloadUrl, path: storagePath } : b) };
-            await pushToFirebase(updated);
-            setData(updated);
+            setData(prev => {
+              const nextBills = (prev.bills || []).map(b => {
+                if (b.id !== timestamp) return b;
+                return { id: timestamp, date: new Date().toISOString(), image: downloadUrl, path: storagePath };
+              });
+
+              const cloudNext = { ...prev, bills: useV2Storage ? [] : nextBills };
+              pushToFirebase(cloudNext).catch(e => console.error('Final bill save failed', e));
+              if (useV2Storage) {
+                upsertBillV2({ id: timestamp, date: new Date().toISOString(), image: downloadUrl, path: storagePath }).catch(e => {
+                  console.warn('Final bill v2 upsert failed', e);
+                });
+              }
+
+              return { ...prev, bills: nextBills };
+            });
             try { URL.revokeObjectURL(previewUrl); } catch(e) { console.warn('Revoke failed', e); }
             showToast('Bill Saved!');
           });
@@ -693,11 +1012,21 @@ function DukanRegister() {
       if (!bill) return;
       if (!confirm('Delete this bill?')) return;
       // Optimistic UI removal: remove immediately and push to cloud
-      const updated = { ...data, bills: (data.bills || []).filter(b => b.id !== bill.id) };
-      setData(updated);
-      pushToFirebase(updated).catch(e => {
-        console.error('Failed to update cloud after delete', e);
-        showToast('Cloud delete failed, will retry', 'error');
+      setData(prev => {
+        const nextBills = (prev.bills || []).filter(b => b.id !== bill.id);
+        const cloudNext = { ...prev, bills: useV2Storage ? [] : nextBills };
+        pushToFirebase(cloudNext).catch(e => {
+          console.error('Failed to update cloud after delete', e);
+          showToast('Cloud delete failed, will retry', 'error');
+        });
+
+        if (useV2Storage) {
+          deleteBillV2(bill.id).catch(e => {
+            console.warn('Bill v2 delete failed', e);
+          });
+        }
+
+        return { ...prev, bills: nextBills };
       });
 
       // Background storage delete with retry; if it fails persistently, queue it for later
@@ -854,6 +1183,8 @@ function DukanRegister() {
 
   const handleDeletePage = async () => {
     if (!managingPage) return;
+
+    haptic();
     
     triggerConfirm("Delete Page?", "This page and all its items will be deleted permanently.", true, async () => {
         const filteredPages = data.pages.filter(p => p.id !== managingPage.id);
@@ -882,6 +1213,7 @@ function DukanRegister() {
   };
 
   const handleDeleteEntry = async () => {
+      haptic();
       triggerConfirm("Delete Item?", "This item will be permanently removed.", true, async () => {
           const newData = { ...data, entries: data.entries.filter(e => e.id !== editingEntry.id) };
           await pushToFirebase(newData);
@@ -892,6 +1224,8 @@ function DukanRegister() {
 
   const handleEditEntrySave = async () => {
       if (!editingEntry || !editingEntry.car) return;
+
+      haptic();
       const newData = { 
           ...data, 
           entries: data.entries.map(e => e.id === editingEntry.id ? { ...e, car: editingEntry.car } : e)
@@ -903,6 +1237,8 @@ function DukanRegister() {
 
   const handleAddPage = async () => {
     if (!input.itemName) return;
+
+    haptic();
     const formattedName = input.itemName.charAt(0).toUpperCase() + input.itemName.slice(1);
     const newPage = { id: Date.now(), pageNo: data.pages.length + 1, itemName: formattedName };
     await pushToFirebase({ ...data, pages: [...data.pages, newPage] });
@@ -913,6 +1249,8 @@ function DukanRegister() {
 
   const handleAddEntry = async () => {
     if (!input.carName || !activePage) return;
+
+    haptic();
     const formattedCar = input.carName.charAt(0).toUpperCase() + input.carName.slice(1);
     const newEntry = { id: Date.now(), pageId: activePage.id, car: formattedCar, qty: parseInt(input.qty) || 0 };
     await pushToFirebase({ ...data, entries: [...data.entries, newEntry] });
@@ -1154,6 +1492,7 @@ function DukanRegister() {
   }, [showToast, t]);
 
   const openSaveModal = () => {
+    haptic();
     setSavePassInput('');
     setIsSaveModalOpen(true);
   };
@@ -1198,7 +1537,16 @@ function DukanRegister() {
 
         const mergedSalesEvents = ([...(data.salesEvents || []), ...newSalesEvents]).slice(-2000);
 
-        const success = await pushToFirebase({ ...data, entries: updatedEntries, salesEvents: mergedSalesEvents });
+        const success = await pushToFirebase({ ...data, entries: updatedEntries, salesEvents: useV2Storage ? [] : mergedSalesEvents });
+        if (success && useV2Storage && newSalesEvents.length) {
+          try {
+            await appendSalesEventsV2(newSalesEvents);
+            // Optimistic UI update; listener will keep it consistent.
+            setData(prev => ({ ...prev, salesEvents: ([...(prev.salesEvents || []), ...newSalesEvents]).slice(-SALES_EVENTS_LIMIT) }));
+          } catch (e) {
+            console.warn('Failed to write sales events v2', e);
+          }
+        }
       if(success) {
           setTempChanges({}); 
           setIsSaveModalOpen(false); 
@@ -1345,7 +1693,7 @@ function DukanRegister() {
 
   if (authLoading || (user && dbLoading)) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white p-10">
+      <div onPointerDownCapture={hapticFromEvent} className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white p-10">
         <div className="flex flex-col items-center justify-center gap-8">
           {/* Logo */}
           <div className="relative">
@@ -1371,13 +1719,15 @@ function DukanRegister() {
 
           <p className="text-slate-500 text-xs font-semibold animate-pulse">Loading your data...</p>
         </div>
+
+        {updateAvailablePrompt}
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white relative overflow-hidden">
+      <div onPointerDownCapture={hapticFromEvent} className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white relative overflow-hidden">
         {/* Background decoration */}
         <div className="absolute top-20 left-10 w-72 h-72 bg-blue-600 rounded-full blur-[120px] opacity-20"></div>
         <div className="absolute bottom-20 right-10 w-72 h-72 bg-purple-600 rounded-full blur-[120px] opacity-20"></div>
@@ -1413,6 +1763,8 @@ function DukanRegister() {
              </button>
            </div>
         </div>
+
+        {updateAvailablePrompt}
       </div>
     );
   }
@@ -1813,7 +2165,10 @@ function DukanRegister() {
             'pageAdd',
             () => fabPosPageAdd,
             setFabPosPageAdd,
-            () => setIsNewEntryOpen(true),
+            () => {
+              haptic();
+              setIsNewEntryOpen(true);
+            },
             56
           )}
           style={{ position: 'fixed', left: (fabPosPageAdd?.x ?? getDefaultFabPos(56).x), top: (fabPosPageAdd?.y ?? getDefaultFabPos(56).y), touchAction: 'none' }}
@@ -2024,6 +2379,23 @@ function DukanRegister() {
               </div>
             </div>
             <ChevronRight size={20} className="opacity-50"/>
+           </button>
+
+           {/* Keep Screen On */}
+           <button
+             onClick={toggleScreenLock}
+             className={`w-full p-4 rounded-2xl flex items-center justify-between gap-2 shadow-sm border ${keepScreenOn ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white border-green-400' : isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}
+           >
+             <div className="flex items-center gap-3">
+               <div className={`p-2 rounded-xl shadow ${keepScreenOn ? 'bg-white/20' : 'bg-gradient-to-br from-green-500 to-emerald-600'}`}>
+                 <Clock size={20} className={keepScreenOn ? 'text-white' : 'text-white'} />
+               </div>
+               <div className="text-left">
+                 <span className="font-bold block">{t('Keep Screen On')}</span>
+                 <span className="text-xs opacity-80">{keepScreenOn ? t('ON') : t('OFF')}</span>
+               </div>
+             </div>
+             <ChevronRight size={20} className="opacity-50" />
            </button>
 
            {/* Business Achievements */}
@@ -2573,7 +2945,7 @@ function DukanRegister() {
 
 
   return (
-    <div className={`min-h-screen font-sans ${!isOnline ? 'pt-10' : ''}`} style={{ backgroundColor: themePreset.bg }}>
+    <div onPointerDownCapture={hapticFromEvent} className={`min-h-screen font-sans ${!isOnline ? 'pt-10' : ''}`} style={{ backgroundColor: themePreset.bg }}>
       <audio ref={audioRef} src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
 
       {/* ?? CONNECTIVITY INDICATORS */}
@@ -2635,9 +3007,24 @@ function DukanRegister() {
       
       {/* Bills view removed */}
 
-      {view === 'tools' && <ToolsHubView onBack={closeTools} t={t} isDark={isDark} initialTool={activeToolId} pinnedTools={data.settings.pinnedTools || []} onTogglePin={handleTogglePin} shopDetails={data.settings} pages={data.pages || []} />}
+      {view === 'tools' && (
+        <Suspense fallback={<div className="p-10 text-center text-slate-500">Loading Tools...</div>}>
+          <ToolsHubView
+            onBack={closeTools}
+            t={t}
+            isDark={isDark}
+            initialTool={activeToolId}
+            pinnedTools={data.settings.pinnedTools || []}
+            onTogglePin={handleTogglePin}
+            shopDetails={data.settings}
+            pages={data.pages || []}
+          />
+        </Suspense>
+      )}
       
       {renderSaveButton()}
+
+      {updateAvailablePrompt}
 
       <div className={`fixed bottom-0 w-full border-t flex justify-between px-1 py-1.5 pb-safe z-50 backdrop-blur-lg ${isDark ? 'bg-slate-900/95 border-slate-800' : 'bg-white/95 border-gray-200 shadow-lg shadow-gray-200/50'}`}>
         <NavBtn icon={Book} label={t("Index")} active={view === 'generalIndex'} onClick={() => { setView('generalIndex'); setActivePageId(null); }} isDark={isDark} accentHex={accentHex}/>
@@ -2883,7 +3270,15 @@ function DukanRegister() {
                   const existing = (data.entries || []).filter(e => activePage && e.pageId === activePage.id && e.car.toLowerCase().includes(input.carName.toLowerCase())).reduce((a,b) => a+b.qty, 0);
                   return existing > 0 ? <div className="p-2 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm font-bold text-center">{t("Already have")} {existing} {t("in stock!")}</div> : null;
               })()}
-              <input type="number" className="w-full border-2 border-black rounded p-3 text-lg font-bold text-black" placeholder={t("Qty")} value={input.qty} onChange={e => setInput({...input, qty: e.target.value})} />
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                className="w-full border-2 border-black rounded p-3 text-lg font-bold text-black"
+                placeholder={t("Qty")}
+                value={input.qty}
+                onChange={e => setInput({ ...input, qty: e.target.value })}
+              />
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => setIsNewEntryOpen(false)} className="flex-1 py-3 bg-gray-200 rounded font-bold text-black">{t("Cancel")}</button>

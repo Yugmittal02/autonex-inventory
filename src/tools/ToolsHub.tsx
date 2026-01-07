@@ -969,14 +969,17 @@ const ToolsHub = ({
 
               <div className="grid grid-cols-4 gap-2">
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   className="p-2 border-2 rounded-lg text-sm font-bold"
                   placeholder="Qty"
                   value={invCurrentItem.qty}
                   onChange={e => setInvCurrentItem({ ...invCurrentItem, qty: parseInt(e.target.value) || 1 })}
                 />
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   className="p-2 border-2 rounded-lg text-sm"
                   placeholder="Rate ₹"
                   value={invCurrentItem.rate || ''}
@@ -1018,7 +1021,8 @@ const ToolsHub = ({
               </select>
               <div className="flex">
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   className="flex-1 p-2 border-2 rounded-l-xl text-sm"
                   placeholder="Discount"
                   value={invSettings.discount || ''}

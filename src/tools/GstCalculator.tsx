@@ -25,7 +25,14 @@ const GstCalculator = ({ cardClass, commonInputClass }) => {
               {gstInput.isReverse ? "Inclusive (Reverse)" : "Exclusive (Add)"}
           </button>
       </div>
-      <input type="number" placeholder="Enter Amount (₹)" className={commonInputClass} value={gstInput.price} onChange={e => setGstInput({...gstInput, price: e.target.value})} />
+      <input
+        type="text"
+        inputMode="decimal"
+        placeholder="Enter Amount (₹)"
+        className={commonInputClass}
+        value={gstInput.price}
+        onChange={e => setGstInput({...gstInput, price: e.target.value})}
+      />
       <div className="flex gap-2 mb-4">
         {[5, 12, 18, 28].map(r => (
           <button key={r} onClick={() => setGstInput({...gstInput, rate: r})} className={`flex-1 py-2 rounded-lg font-bold border ${gstInput.rate === r ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>{r}%</button>

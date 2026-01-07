@@ -70,10 +70,25 @@ const InvoiceGenerator = ({ onBack, shopDetails, cardClass }) => {
          <div className="bg-gray-50 p-3 rounded-lg border mb-4 text-black">
              <div className="flex gap-2 mb-2">
                  <input className="flex-[2] p-2 border rounded font-bold" placeholder="Item Name" value={invCurrentItem.name} onChange={e=>setInvCurrentItem({...invCurrentItem, name: e.target.value})} />
-                 <input type="number" className="flex-1 p-2 border rounded font-bold" placeholder="Qty" value={invCurrentItem.qty} onChange={e=>setInvCurrentItem({...invCurrentItem, qty: parseInt(e.target.value)||1})} />
+                                 <input
+                                     type="text"
+                                     inputMode="numeric"
+                                     pattern="[0-9]*"
+                                     className="flex-1 p-2 border rounded font-bold"
+                                     placeholder="Qty"
+                                     value={invCurrentItem.qty}
+                                     onChange={e=>setInvCurrentItem({...invCurrentItem, qty: parseInt(e.target.value)||1})}
+                                 />
              </div>
              <div className="flex gap-2 mb-2">
-                 <input type="number" className="flex-1 p-2 border rounded" placeholder="Rate (₹)" value={invCurrentItem.rate || ''} onChange={e=>setInvCurrentItem({...invCurrentItem, rate: parseFloat(e.target.value)})} />
+                                 <input
+                                     type="text"
+                                     inputMode="decimal"
+                                     className="flex-1 p-2 border rounded"
+                                     placeholder="Rate (₹)"
+                                     value={invCurrentItem.rate || ''}
+                                     onChange={e=>setInvCurrentItem({...invCurrentItem, rate: parseFloat(e.target.value)})}
+                                 />
                  <button onClick={addInvItem} className="flex-1 bg-indigo-600 text-white rounded font-bold flex items-center justify-center gap-2"><Plus size={16}/> Add</button>
              </div>
          </div>

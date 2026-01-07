@@ -1,6 +1,5 @@
 import { initializeApp } from 'firebase/app';
 import {
-  CACHE_SIZE_UNLIMITED,
   getFirestore,
   initializeFirestore,
   memoryLocalCache,
@@ -21,6 +20,9 @@ const firebaseConfig = {
 
 export const firebaseApp = initializeApp(firebaseConfig);
 
+// Default cache size is ~40MB. Avoid unlimited cache to prevent very large IndexedDB usage.
+const FIRESTORE_CACHE_BYTES = 40 * 1024 * 1024;
+
 // Initialize Firestore with modern cache settings (fixes deprecation warning)
 export const db = (() => {
   try {
@@ -28,7 +30,7 @@ export const db = (() => {
     const firestore = initializeFirestore(firebaseApp, {
       localCache: persistentLocalCache({
         tabManager: persistentMultipleTabManager(),
-        cacheSizeBytes: CACHE_SIZE_UNLIMITED,
+        cacheSizeBytes: FIRESTORE_CACHE_BYTES,
       }),
     });
     console.info('? Firestore initialized with persistent multi-tab cache');

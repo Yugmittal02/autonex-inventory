@@ -20,7 +20,14 @@ const Converter = ({ cardClass, commonInputClass, isDark }) => {
           <option value="oil">Liters to KG (Oil)</option>
           <option value="feetToM">Feet to Meters</option>
       </select>
-      <input type="number" placeholder="Enter Value" className={commonInputClass} value={convInput.val} onChange={e => setConvInput({...convInput, val: e.target.value})} />
+      <input
+        type="text"
+        inputMode="decimal"
+        placeholder="Enter Value"
+        className={commonInputClass}
+        value={convInput.val}
+        onChange={e => setConvInput({ ...convInput, val: e.target.value })}
+      />
       <div className={`p-6 rounded-xl font-mono text-3xl font-bold text-center mt-4 ${isDark ? 'bg-slate-700' : 'bg-gray-100'}`}>
           {res.toFixed(3)} <span className="text-sm opacity-50">{unit}</span>
       </div>

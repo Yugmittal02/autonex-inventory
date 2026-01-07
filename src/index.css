@@ -3,6 +3,32 @@
 @tailwind utilities;
 /* src/index.css ke end mein add karein */
 
+/* Native-feel tweaks (mobile) */
+body {
+  overscroll-behavior-y: none;
+
+  -webkit-user-select: none;
+  user-select: none;
+
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* But allow text selection inside inputs */
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Font loading tip: if you use @font-face, prefer font-display swap to avoid FOIT */
+/* Example:
+@font-face {
+  font-family: 'YourFont';
+  src: url('/fonts/YourFont.woff2') format('woff2');
+  font-display: swap;
+}
+*/
+
 /* Bolt/Stackblitz branding hide karne ke liye */
 a[href*="bolt.new"], 
 a[href*="stackblitz.com"],
