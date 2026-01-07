@@ -38,13 +38,13 @@ export default defineConfig({
         'robots.txt',
       ],
       manifest: {
-        name: 'AutoHub ERP System',
-        short_name: 'AutoHub',
+        name: 'StoreLink',
+        short_name: 'StoreLink',
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        theme_color: '#000000',
-        background_color: '#ffffff',
+        theme_color: '#111827',
+        background_color: '#0f172a',
         icons: [
           {
             src: '/myicon.png',

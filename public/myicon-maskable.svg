@@ -1,19 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#6366f1"/>
-      <stop offset="100%" stop-color="#4f46e5"/>
+    <radialGradient id="g1" cx="30%" cy="25%" r="85%">
+      <stop offset="0%" stop-color="#4f7cff"/>
+      <stop offset="55%" stop-color="#2f49c7"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </radialGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="60%" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
   </defs>
 
-  <!-- Maskable icons need extra safe padding: keep the glyph smaller -->
-  <rect x="0" y="0" width="512" height="512" rx="140" fill="url(#bg)"/>
+  <!-- Full-bleed background for maskable icons -->
+  <rect x="0" y="0" width="512" height="512" fill="url(#g1)"/>
+  <path d="M40 120 C120 40 240 24 350 70 C412 96 458 134 488 190 C370 142 220 160 120 232 C84 258 56 288 40 328 Z" fill="url(#shine)"/>
 
-  <g transform="translate(0 8) scale(0.86) translate(42 30)" fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M166 214 L256 138 L346 214"/>
-    <path d="M154 232 H358"/>
-    <path d="M178 232 V362 H334 V232"/>
-    <path d="M284 362 V292 H322 V362"/>
-    <path d="M204 292 H258 V336 H204 Z"/>
+  <!-- Centered badge within safe area -->
+  <circle cx="256" cy="256" r="196" fill="none" stroke="#0b1a5a" stroke-opacity="0.35" stroke-width="16"/>
+  <circle cx="256" cy="256" r="182" fill="none" stroke="#000000" stroke-opacity="0.12" stroke-width="6"/>
+
+  <!-- Storefront glyph (white), sized for maskable safe area -->
+  <g fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" transform="translate(0, 6)">
+    <path d="M176 224 L256 160 L336 224"/>
+    <path d="M168 244 H344"/>
+    <path d="M192 244 V356 H320 V244"/>
+    <path d="M192 244 C200 270 224 270 232 244 C240 270 264 270 272 244 C280 270 304 270 312 244"/>
+    <path d="M246 356 V312 C246 294 266 294 266 312 V356"/>
   </g>
 </svg>

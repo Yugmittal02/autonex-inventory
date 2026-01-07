@@ -276,11 +276,17 @@ const ToolsHub = ({
 
   const calcInputDigit = (digit: string) => {
     setCalcDisplay((prev) => {
+      if (prev === 'Error') {
+        setCalcWaiting(false);
+        return digit;
+      }
       if (calcWaiting) {
         setCalcWaiting(false);
         return digit;
       }
       if (prev === '0') return digit;
+      // simple length guard for mobile
+      if (prev.replace('-', '').replace('.', '').length >= 14) return prev;
       return prev + digit;
     });
   };
@@ -303,6 +309,17 @@ const ToolsHub = ({
     setCalcWaiting(false);
   };
 
+  const calcBackspace = () => {
+    setCalcDisplay((prev) => {
+      if (calcWaiting) return prev;
+      if (prev === 'Error') return '0';
+      if (prev.length <= 1) return '0';
+      const next = prev.slice(0, -1);
+      if (next === '-' || next === '') return '0';
+      return next;
+    });
+  };
+
   const calcToggleSign = () => {
     setCalcDisplay((prev) => {
       if (prev === '0') return prev;
@@ -311,8 +328,30 @@ const ToolsHub = ({
   };
 
   const calcPercent = () => {
-    const value = parseFloat(calcDisplay) || 0;
-    setCalcDisplay((value / 100).toString());
+    const value = parseFloat(calcDisplay);
+    if (Number.isNaN(value)) return;
+
+    // Phone-style: if there's a stored value + pending operator, treat current as percent of stored.
+    const base = calcStored !== null && calcOp ? calcStored : null;
+    const result = base !== null ? (base * value) / 100 : value / 100;
+    setCalcDisplay(formatCalcNumber(result));
+  };
+
+  const formatCalcNumber = (n: number) => {
+    if (!Number.isFinite(n)) return 'Error';
+    // Keep display readable on mobile; avoid long floating tails.
+    const abs = Math.abs(n);
+    let s = abs >= 1e12 ? n.toExponential(6) : n.toString();
+
+    // Round typical float noise (e.g. 0.30000000000000004)
+    if (!s.includes('e')) {
+      const rounded = Math.round(n * 1e10) / 1e10;
+      s = rounded.toString();
+    }
+
+    // Trim trailing zeros
+    if (s.includes('.')) s = s.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+    return s;
   };
 
   const calcCompute = (a: number, b: number, op: NonNullable<typeof calcOp>) => {
@@ -332,6 +371,12 @@ const ToolsHub = ({
     const inputValue = parseFloat(calcDisplay);
     if (Number.isNaN(inputValue)) return;
 
+    // If user taps another operator while waiting for next number, just change operator.
+    if (calcWaiting && calcStored !== null) {
+      setCalcOp(op);
+      return;
+    }
+
     if (calcStored === null) {
       setCalcStored(inputValue);
       setCalcOp(op);
@@ -341,9 +386,10 @@ const ToolsHub = ({
 
     if (calcOp) {
       const result = calcCompute(calcStored, inputValue, calcOp);
-      const safe = Number.isFinite(result) ? result : 0;
-      setCalcDisplay(safe.toString());
-      setCalcStored(safe);
+      const next = Number.isFinite(result) ? result : NaN;
+      const formatted = formatCalcNumber(next);
+      setCalcDisplay(formatted);
+      setCalcStored(formatted === 'Error' ? null : (parseFloat(formatted) as any));
     }
 
     setCalcOp(op);
@@ -354,8 +400,8 @@ const ToolsHub = ({
     const inputValue = parseFloat(calcDisplay);
     if (calcStored === null || !calcOp || Number.isNaN(inputValue)) return;
     const result = calcCompute(calcStored, inputValue, calcOp);
-    const safe = Number.isFinite(result) ? result : 0;
-    setCalcDisplay(safe.toString());
+    const formatted = formatCalcNumber(Number.isFinite(result) ? result : NaN);
+    setCalcDisplay(formatted);
     setCalcStored(null);
     setCalcOp(null);
     setCalcWaiting(true);
@@ -1714,16 +1760,18 @@ const ToolsHub = ({
                 <Calculator className="text-slate-600" size={24} />
                 Calculator
               </h3>
-              <button
-                onClick={calcClear}
-                className="text-xs text-red-500 font-bold bg-red-50 px-3 py-1 rounded-full"
-              >
-                CLEAR
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={calcBackspace} className={`text-xs font-bold px-3 py-1 rounded-full ${isDark ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-800'}`}>
+                  ⌫
+                </button>
+                <button onClick={calcClear} className="text-xs text-red-500 font-bold bg-red-50 px-3 py-1 rounded-full">
+                  CLEAR
+                </button>
+              </div>
             </div>
 
             <div className={`w-full rounded-2xl p-4 mb-4 border-2 ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
-              <div className={`text-right font-black text-4xl leading-none ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              <div className={`text-right font-black text-4xl leading-none break-words ${isDark ? 'text-white' : 'text-gray-900'}`}>
                 {calcDisplay}
               </div>
             </div>

@@ -228,6 +228,11 @@ function DukanRegister() {
   const [dragOverPageId, setDragOverPageId] = useState<any>(null);
   const draggingPageIdRef = useRef<any>(null);
   const dragOverPageIdRef = useRef<any>(null);
+
+  // Draggable floating "+" (Index + Pages)
+  const [fabPosIndex, setFabPosIndex] = useState<any>(null);
+  const [fabPosPages, setFabPosPages] = useState<any>(null);
+  const fabDragRef = useRef<any>(null);
   
   const [input, setInput] = useState({ itemName: '', carName: '', qty: '' });
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -989,6 +994,103 @@ function DukanRegister() {
     showToast(t('Page order updated'));
   };
 
+  const clampFabPos = (pos: { x: number; y: number }, size: number) => {
+    const margin = 12;
+    const w = typeof window !== 'undefined' ? window.innerWidth : 360;
+    const h = typeof window !== 'undefined' ? window.innerHeight : 640;
+    return {
+      x: Math.max(margin, Math.min(w - size - margin, pos.x)),
+      y: Math.max(margin, Math.min(h - size - margin, pos.y)),
+    };
+  };
+
+  const getDefaultFabPos = (size: number) => {
+    const w = typeof window !== 'undefined' ? window.innerWidth : 360;
+    const h = typeof window !== 'undefined' ? window.innerHeight : 640;
+    return { x: w - size - 24, y: h - size - 96 };
+  };
+
+  const loadFabPos = (key: string) => {
+    try {
+      const raw = localStorage.getItem(`fabPos:${key}`);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.x !== 'number' || typeof parsed?.y !== 'number') return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  };
+
+  const saveFabPos = (key: string, pos: { x: number; y: number }) => {
+    try {
+      localStorage.setItem(`fabPos:${key}`, JSON.stringify(pos));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  useEffect(() => {
+    const size = 64;
+    if (view === 'generalIndex' && !fabPosIndex) {
+      const saved = loadFabPos('index');
+      const next = clampFabPos(saved || getDefaultFabPos(size), size);
+      setFabPosIndex(next);
+    }
+    if (view === 'pagesGrid' && !fabPosPages) {
+      const saved = loadFabPos('pages');
+      const next = clampFabPos(saved || getDefaultFabPos(size), size);
+      setFabPosPages(next);
+    }
+  }, [view, fabPosIndex, fabPosPages]);
+
+  const makeFabHandlers = (
+    key: 'index' | 'pages',
+    getPos: () => { x: number; y: number } | null,
+    setPos: (p: any) => void,
+    onTap: () => void,
+    size: number
+  ) => {
+    return {
+      onPointerDown: (e: any) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const pos = getPos() || getDefaultFabPos(size);
+        fabDragRef.current = {
+          key,
+          pointerId: e.pointerId,
+          startX: e.clientX,
+          startY: e.clientY,
+          startPos: pos,
+          moved: false,
+        };
+        try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* noop */ }
+      },
+      onPointerMove: (e: any) => {
+        const st = fabDragRef.current;
+        if (!st || st.key !== key || st.pointerId !== e.pointerId) return;
+        const dx = e.clientX - st.startX;
+        const dy = e.clientY - st.startY;
+        if (!st.moved && Math.hypot(dx, dy) > 6) st.moved = true;
+        const next = clampFabPos({ x: st.startPos.x + dx, y: st.startPos.y + dy }, size);
+        setPos(next);
+      },
+      onPointerUp: (e: any) => {
+        const st = fabDragRef.current;
+        if (!st || st.key !== key || st.pointerId !== e.pointerId) return;
+        fabDragRef.current = null;
+        const pos = getPos();
+        if (pos) saveFabPos(key, pos);
+        if (!st.moved) onTap();
+      },
+      onPointerCancel: (e: any) => {
+        const st = fabDragRef.current;
+        if (!st || st.key !== key || st.pointerId !== e.pointerId) return;
+        fabDragRef.current = null;
+      },
+    };
+  };
+
   const handleMoveEntry = async (direction) => {
       if (!editingEntry) return;
       const pageEntries = data.entries.filter(e => e.pageId === editingEntry.pageId); 
@@ -1202,44 +1304,14 @@ function DukanRegister() {
       );
   };
 
-  const isStandalone = useMemo(() => {
-    try {
-      // PWA standalone (Android/desktop) OR iOS standalone
-      return (
-        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
-        (window.navigator && (window.navigator as any).standalone === true)
-      );
-    } catch {
-      return false;
-    }
-  }, []);
 
     // Bills UI removed   feature deprecated per user request
 
   if (authLoading || (user && dbLoading)) {
-    // In PWA standalone mode, the OS already shows the app icon splash.
-    // To avoid a "double logo" effect, show a premium spinner-only loader.
-    if (isStandalone) {
-      return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white p-10">
-          <div className="flex flex-col items-center justify-center gap-6">
-            <div className="relative">
-              <div className="w-12 h-12 border-4 border-slate-700 border-t-blue-500 rounded-full animate-spin"></div>
-              <div
-                className="absolute inset-0 w-12 h-12 border-4 border-transparent border-b-purple-500 rounded-full animate-spin"
-                style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}
-              ></div>
-            </div>
-            <p className="text-slate-500 text-xs font-semibold animate-pulse">Loading…</p>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white p-10">
         <div className="flex flex-col items-center justify-center gap-8">
-          {/* Logo Animation */}
+          {/* Logo */}
           <div className="relative">
             <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-20 animate-pulse"></div>
             <div className="relative bg-gradient-to-br from-blue-600 to-purple-600 p-6 rounded-3xl shadow-2xl">
@@ -1252,7 +1324,7 @@ function DukanRegister() {
             <p className="text-slate-400 text-sm font-medium">Business Tools & Billing</p>
           </div>
 
-          {/* Loading Spinner */}
+          {/* Loading Spinner (colors match logo theme) */}
           <div className="relative">
             <div className="w-12 h-12 border-4 border-slate-700 border-t-blue-500 rounded-full animate-spin"></div>
             <div
@@ -1486,8 +1558,18 @@ function DukanRegister() {
         </div>
       </div>
       <button 
-        onClick={() => setIsNewPageOpen(true)} 
-        className="fixed bottom-24 right-6 bg-gradient-to-br from-yellow-500 to-orange-500 text-white w-16 h-16 rounded-2xl shadow-2xl shadow-yellow-500/40 flex items-center justify-center active:scale-90 z-20 hover:from-yellow-400 hover:to-orange-400 transition-all group"
+        type="button"
+        aria-label="Add Page"
+        title="Hold and drag to move"
+        {...makeFabHandlers(
+          'index',
+          () => fabPosIndex,
+          setFabPosIndex,
+          () => setIsNewPageOpen(true),
+          64
+        )}
+        style={{ position: 'fixed', left: (fabPosIndex?.x ?? getDefaultFabPos(64).x), top: (fabPosIndex?.y ?? getDefaultFabPos(64).y), touchAction: 'none' }}
+        className="bg-gradient-to-br from-yellow-500 to-orange-500 text-white w-16 h-16 rounded-2xl shadow-2xl shadow-yellow-500/40 flex items-center justify-center active:scale-90 z-20 hover:from-yellow-400 hover:to-orange-400 transition-all group"
       >
         <Plus size={32} strokeWidth={3} className="group-hover:rotate-90 transition-transform duration-200"/>
       </button>
@@ -1575,7 +1657,22 @@ function DukanRegister() {
                   )
             })}
         </div>
-        <button onClick={() => setIsNewPageOpen(true)} className="fixed bottom-24 right-6 bg-blue-600 text-white w-14 h-14 rounded-full shadow-xl border-2 border-white flex items-center justify-center active:scale-95 z-20"><Plus size={28}/></button>
+        <button
+          type="button"
+          aria-label="Add Page"
+          title="Hold and drag to move"
+          {...makeFabHandlers(
+            'pages',
+            () => fabPosPages,
+            setFabPosPages,
+            () => setIsNewPageOpen(true),
+            56
+          )}
+          style={{ position: 'fixed', left: (fabPosPages?.x ?? getDefaultFabPos(56).x), top: (fabPosPages?.y ?? getDefaultFabPos(56).y), touchAction: 'none' }}
+          className="bg-blue-600 text-white w-14 h-14 rounded-full shadow-xl border-2 border-white flex items-center justify-center active:scale-95 z-20"
+        >
+          <Plus size={28}/>
+        </button>
     </div>
   );
 
